@@ -23,6 +23,13 @@ import { databaseService } from './DatabaseService.js';
  * operations and business logic in one place.
  */
 class TodoService {
+  // Temporary uuid to id table map
+  idMap: Map<string, string>;
+
+  constructor () {
+    this.idMap = new Map();
+  }
+
   /**
    * Create a new todo
    * 
@@ -68,7 +75,7 @@ class TodoService {
    * 1. Queries the database for a todo with the given ID
    * 2. Converts the database row to a Todo object if found
    * 
-   * @param id The UUID of the todo to retrieve
+   * @param id The task id (task-*) of the todo to retrieve
    * @returns The Todo if found, undefined otherwise
    */
   getTodo(id: string): Todo | undefined {
@@ -76,8 +83,11 @@ class TodoService {
     
     // Use parameterized query to prevent SQL injection
     const stmt = db.prepare('SELECT * FROM todos WHERE id = ?');
-    const row = stmt.get(id) as any;
-    
+
+    const uuid = this.idMap.get(id);
+
+    const row = stmt.get(uuid) as any;
+
     // Return undefined if no todo was found
     if (!row) return undefined;
     
@@ -129,7 +139,7 @@ class TodoService {
    * @param data The update data (id required, title/description optional)
    * @returns The updated Todo if found, undefined otherwise
    */
-  updateTodo(data: z.infer<typeof UpdateTodoSchema>): Todo | undefined {
+  updateTodo(data: z.infer<typeof UpdateTodoSchema>): Todo | undefined {    
     // First check if the todo exists
     const todo = this.getTodo(data.id);
     if (!todo) return undefined;
@@ -149,11 +159,11 @@ class TodoService {
       data.title || todo.title,
       data.description || todo.description,
       updatedAt,
-      todo.id
+      this.idMap.get(todo.id)
     );
-    
+
     // Return the updated todo
-    return this.getTodo(todo.id);
+    return this.getTodo(data.id);
   }
 
   /**
@@ -183,7 +193,7 @@ class TodoService {
     `);
     
     // Set the completedAt timestamp
-    stmt.run(now, now, id);
+    stmt.run(now, now, todo.id);
     
     // Return the updated todo
     return this.getTodo(id);
@@ -200,8 +210,16 @@ class TodoService {
   deleteTodo(id: string): boolean {
     const db = databaseService.getDb();
     const stmt = db.prepare('DELETE FROM todos WHERE id = ?');
-    const result = stmt.run(id);
+
+    // Convert the readable id to uuid
+    const uuid = this.idMap.get(id);
+
+    const result = stmt.run(uuid);
     
+    if (result.changes > 0){
+      this.idMap.delete(id);
+    }
+
     // Check if any rows were affected
     return result.changes > 0;
   }
@@ -284,12 +302,25 @@ class TodoService {
    * - Creates a single place to update if the model changes
    * - Isolates database-specific knowledge from the rest of the code
    * 
-   * @param row The database row data
+   * @param row The database row data, note that the 'id' field is the task ID, not UUID
    * @returns A properly formatted Todo object
    */
   private rowToTodo(row: any): Todo {
+    let taskName = undefined;
+
+    for (let entry of this.idMap.entries()){
+        if (entry[1] == row.id){
+          taskName = entry[0];
+        }
+    }
+    
+    if (!taskName){
+      taskName = "task-" + (this.idMap.size + 1);
+      this.idMap.set(taskName, row.id);    
+    }
+     
     return {
-      id: row.id,
+      id: taskName,
       title: row.title,
       description: row.description,
       completedAt: row.completedAt,

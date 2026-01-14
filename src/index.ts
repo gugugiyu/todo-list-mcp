@@ -156,7 +156,7 @@ server.tool(
   "get-todo",
   "Get a specific todo by ID",
   {
-    id: z.string().uuid("Invalid Todo ID"),
+    id: z.string().regex(/task-[\d]+/, "Invalid ID value"),
   },
   async ({ id }) => {
     const result = await safeExecute(() => {
@@ -188,7 +188,7 @@ server.tool(
   "update-todo",
   "Update a todo title or description",
   {
-    id: z.string().uuid("Invalid Todo ID"),
+    id: z.string().regex(/task-[\d]+/, "Invalid ID value"),
     title: z.string().min(1, "Title is required").optional(),
     description: z.string().min(1, "Description is required").optional(),
   },
@@ -235,7 +235,7 @@ server.tool(
   "complete-todo",
   "Mark a todo as completed",
   {
-    id: z.string().uuid("Invalid Todo ID"),
+    id: z.string().regex(/task-[\d]+/, "Invalid ID value"),
   },
   async ({ id }) => {
     const result = await safeExecute(() => {
@@ -270,7 +270,7 @@ server.tool(
   "delete-todo",
   "Delete a todo",
   {
-    id: z.string().uuid("Invalid Todo ID"),
+    id: z.string().regex(/task-[\d]+/, "Invalid ID value"),
   },
   async ({ id }) => {
     const result = await safeExecute(() => {

@@ -54,19 +54,19 @@ export const CreateTodoSchema = z.object({
 
 // Schema for updating a todo - requires ID, title and description are optional
 export const UpdateTodoSchema = z.object({
-  id: z.string().uuid("Invalid Todo ID"),
+  id: z.string().regex(/task-[\d]+/, "Invalid ID value"),
   title: z.string().min(1, "Title is required").optional(),
   description: z.string().min(1, "Description is required").optional(),
 });
 
 // Schema for completing a todo - requires only ID
 export const CompleteTodoSchema = z.object({
-  id: z.string().uuid("Invalid Todo ID"),
+  id: z.string().regex(/task-[\d]+/, "Invalid ID value"),
 });
 
 // Schema for deleting a todo - requires only ID
 export const DeleteTodoSchema = z.object({
-  id: z.string().uuid("Invalid Todo ID"),
+  id: z.string().regex(/task-[\d]+/, "Invalid ID value"),
 });
 
 // Schema for searching todos by title - requires search term
