@@ -14,6 +14,8 @@
 import { Todo, createTodo, CreateTodoSchema, UpdateTodoSchema } from '../models/Todo.js';
 import { z } from 'zod';
 import { databaseService } from './DatabaseService.js';
+import { idMapService, EntityType } from './IdMapService.js';
+import { tagService } from './TagService.js';
 
 /**
  * TodoService Class
@@ -23,11 +25,8 @@ import { databaseService } from './DatabaseService.js';
  * operations and business logic in one place.
  */
 class TodoService {
-  // Temporary uuid to id table map
-  idMap: Map<string, string>;
-
-  constructor () {
-    this.idMap = new Map();
+  constructor() {
+    // Initialization handled by IdMapService
   }
 
   /**
@@ -38,7 +37,7 @@ class TodoService {
    * 2. Persists it to the database
    * 3. Returns the created Todo
    * 
-   * @param data Validated input data (title and description)
+   * @param data Validated input data (title, description, priority)
    * @returns The newly created Todo
    */
   createTodo(data: z.infer<typeof CreateTodoSchema>): Todo {
@@ -50,13 +49,14 @@ class TodoService {
     
     // Prepare the SQL statement for inserting a new todo
     const stmt = db.prepare(`
-      INSERT INTO todos (id, title, description, completedAt, createdAt, updatedAt)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT INTO todos (id, priority, title, description, completedAt, createdAt, updatedAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
     `);
     
     // Execute the statement with the todo's data
     stmt.run(
       todo.id,
+      todo.priority,
       todo.title,
       todo.description,
       todo.completedAt,
@@ -70,11 +70,13 @@ class TodoService {
 
   /**
    * Get a todo by ID
-   * 
+   *
    * This method:
    * 1. Queries the database for a todo with the given ID
    * 2. Converts the database row to a Todo object if found
-   * 
+   * 3. Populates the blocked_by field with all blocker task-* IDs
+   * 4. Populates the tags field with all associated tag-* IDs
+   *
    * @param id The task id (task-*) of the todo to retrieve
    * @returns The Todo if found, undefined otherwise
    */
@@ -84,7 +86,8 @@ class TodoService {
     // Use parameterized query to prevent SQL injection
     const stmt = db.prepare('SELECT * FROM todos WHERE id = ?');
 
-    const uuid = this.idMap.get(id);
+    const uuid = idMapService.getUuid(id, EntityType.TODO);
+    if (!uuid) return undefined;
 
     const row = stmt.get(uuid) as any;
 
@@ -92,13 +95,21 @@ class TodoService {
     if (!row) return undefined;
     
     // Convert the database row to a Todo object
-    return this.rowToTodo(row);
+    const todo = this.rowToTodo(row);
+    // Populate blocked_by field
+    todo.blocked_by = this.getBlockerIds(id);
+    // Populate tags field
+    todo.tags = this.getTagIds(id);
+    // Populate tagNames field
+    todo.tagNames = tagService.getTagNames(todo.tags);
+    return todo;
   }
 
   /**
    * Get all todos
    * 
    * This method returns all todos in the database without filtering.
+   * Populates the blocked_by field for each todo.
    * 
    * @returns Array of all Todos
    */
@@ -107,16 +118,23 @@ class TodoService {
     const stmt = db.prepare('SELECT * FROM todos');
     const rows = stmt.all() as any[];
     
-    // Convert each database row to a Todo object
-    return rows.map(row => this.rowToTodo(row));
+    // Convert each database row to a Todo object and populate blocked_by, tags, and tagNames
+    return rows.map(row => {
+      const todo = this.rowToTodo(row);
+      todo.blocked_by = this.getBlockerIds(todo.id);
+      todo.tags = this.getTagIds(todo.id);
+      todo.tagNames = tagService.getTagNames(todo.tags);
+      return todo;
+    });
   }
 
   /**
    * Get all active (non-completed) todos
-   * 
+   *
    * This method returns only todos that haven't been marked as completed.
    * A todo is considered active when its completedAt field is NULL.
-   * 
+   * Populates the blocked_by and tags fields for each todo.
+   *
    * @returns Array of active Todos
    */
   getActiveTodos(): Todo[] {
@@ -124,8 +142,14 @@ class TodoService {
     const stmt = db.prepare('SELECT * FROM todos WHERE completedAt IS NULL');
     const rows = stmt.all() as any[];
     
-    // Convert each database row to a Todo object
-    return rows.map(row => this.rowToTodo(row));
+    // Convert each database row to a Todo object and populate blocked_by, tags, and tagNames
+    return rows.map(row => {
+      const todo = this.rowToTodo(row);
+      todo.blocked_by = this.getBlockerIds(todo.id);
+      todo.tags = this.getTagIds(todo.id);
+      todo.tagNames = tagService.getTagNames(todo.tags);
+      return todo;
+    });
   }
 
   /**
@@ -155,11 +179,12 @@ class TodoService {
     `);
     
     // Update with new values or keep existing ones if not provided
+    const uuid = idMapService.getUuid(todo.id, EntityType.TODO);
     stmt.run(
       data.title || todo.title,
       data.description || todo.description,
       updatedAt,
-      this.idMap.get(todo.id)
+      uuid
     );
 
     // Return the updated todo
@@ -174,7 +199,7 @@ class TodoService {
    * 2. Sets the completedAt timestamp to the current time
    * 3. Returns the updated todo
    * 
-   * @param id The UUID of the todo to complete
+   * @param id The task-* ID of the todo to complete
    * @returns The updated Todo if found, undefined otherwise
    */
   completeTodo(id: string): Todo | undefined {
@@ -192,8 +217,11 @@ class TodoService {
       WHERE id = ?
     `);
     
+    // Convert readable ID to UUID
+    const uuid = idMapService.getUuid(id, EntityType.TODO);
+    
     // Set the completedAt timestamp
-    stmt.run(now, now, todo.id);
+    stmt.run(now, now, uuid);
     
     // Return the updated todo
     return this.getTodo(id);
@@ -212,12 +240,13 @@ class TodoService {
     const stmt = db.prepare('DELETE FROM todos WHERE id = ?');
 
     // Convert the readable id to uuid
-    const uuid = this.idMap.get(id);
+    const uuid = idMapService.getUuid(id, EntityType.TODO);
+    if (!uuid) return false;
 
     const result = stmt.run(uuid);
     
     if (result.changes > 0){
-      this.idMap.delete(id);
+      idMapService.unregisterMapping(id, uuid, EntityType.TODO);
     }
 
     // Check if any rows were affected
@@ -243,7 +272,13 @@ class TodoService {
     const stmt = db.prepare('SELECT * FROM todos WHERE title LIKE ? COLLATE NOCASE');
     const rows = stmt.all(searchTerm) as any[];
     
-    return rows.map(row => this.rowToTodo(row));
+    return rows.map(row => {
+      const todo = this.rowToTodo(row);
+      todo.blocked_by = this.getBlockerIds(todo.id);
+      todo.tags = this.getTagIds(todo.id);
+      todo.tagNames = tagService.getTagNames(todo.tags);
+      return todo;
+    });
   }
 
   /**
@@ -263,7 +298,36 @@ class TodoService {
     const stmt = db.prepare('SELECT * FROM todos WHERE createdAt LIKE ?');
     const rows = stmt.all(datePattern) as any[];
     
-    return rows.map(row => this.rowToTodo(row));
+    return rows.map(row => {
+      const todo = this.rowToTodo(row);
+      todo.blocked_by = this.getBlockerIds(todo.id);
+      todo.tags = this.getTagIds(todo.id);
+      todo.tagNames = tagService.getTagNames(todo.tags);
+      return todo;
+    });
+  }
+
+  /**
+   * Search todos by priority
+   * 
+   * This method performs a case-insensitive partial match search
+   * on priority of todos.
+   * 
+   * @param priority The priority, ranging from URGENT to LOWEST
+   * @returns Array of matching Todos
+   */
+  searchByPriority(priority: string): Todo[] {    
+    const db = databaseService.getDb();
+    const stmt = db.prepare('SELECT * FROM todos WHERE priority LIKE ?');
+    const rows = stmt.all(priority) as any[];
+    
+    return rows.map(row => {
+      const todo = this.rowToTodo(row);
+      todo.blocked_by = this.getBlockerIds(todo.id);
+      todo.tags = this.getTagIds(todo.id);
+      todo.tagNames = tagService.getTagNames(todo.tags);
+      return todo;
+    });
   }
 
   /**
@@ -293,41 +357,240 @@ class TodoService {
   
   /**
    * Helper to convert a database row to a Todo object
-   * 
+   *
    * This private method handles the conversion between the database
    * representation and the application model.
-   * 
+   *
    * WHY SEPARATE THIS LOGIC?
    * - Avoids repeating the conversion code in multiple methods
    * - Creates a single place to update if the model changes
    * - Isolates database-specific knowledge from the rest of the code
-   * 
-   * @param row The database row data, note that the 'id' field is the task ID, not UUID
+   *
+   * @param row The database row data, note that the 'id' field is the UUID
    * @returns A properly formatted Todo object
    */
   private rowToTodo(row: any): Todo {
-    let taskName = undefined;
-
-    for (let entry of this.idMap.entries()){
-        if (entry[1] == row.id){
-          taskName = entry[0];
-        }
-    }
-    
-    if (!taskName){
-      taskName = "task-" + (this.idMap.size + 1);
-      this.idMap.set(taskName, row.id);    
-    }
-     
+    const taskName = idMapService.getHumanReadableId(row.id, EntityType.TODO);
+      
     return {
       id: taskName,
       title: row.title,
+      priority: row.priority,
       description: row.description,
       completedAt: row.completedAt,
       completed: row.completedAt !== null, // Computed from completedAt
+      blocked_by: [],
+      tags: [],
+      tagNames: [],
       createdAt: row.createdAt,
       updatedAt: row.updatedAt
     };
+  }
+
+  /**
+   * Add a blocker dependency to a todo
+   * 
+   * This marks that a todo is blocked by another todo.
+   * 
+   * @param blockedTodoId The task-* ID of the todo being blocked
+   * @param blockerTodoId The task-* ID of the todo that blocks it
+   * @returns true if the dependency was created, false if it already exists
+   */
+  addBlockerDependency(blockedTodoId: string, blockerTodoId: string): boolean {
+    const db = databaseService.getDb();
+    
+    // Prevent self-blocking
+    if (blockedTodoId === blockerTodoId) {
+      throw new Error("A todo cannot be blocked by itself");
+    }
+
+    try {
+      const stmt = db.prepare(`
+        INSERT INTO todo_dependencies (blocked_todo_id, blocker_todo_id, createdAt)
+        VALUES (?, ?, ?)
+      `);
+      
+      const now = new Date().toISOString();
+      
+      // Convert readable IDs to UUIDs
+      const blockedUuid = idMapService.getUuid(blockedTodoId, EntityType.TODO);
+      const blockerUuid = idMapService.getUuid(blockerTodoId, EntityType.TODO);
+      
+      if (!blockedUuid || !blockerUuid) {
+        throw new Error("One or both todos not found");
+      }
+      
+      const result = stmt.run(blockedUuid, blockerUuid, now);
+      return result.changes > 0;
+    } catch (error: any) {
+      if (error.message.includes('UNIQUE constraint failed')) {
+        return false;
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Remove a blocker dependency from a todo
+   * 
+   * @param blockedTodoId The task-* ID of the todo being blocked
+   * @param blockerTodoId The task-* ID of the todo that blocks it
+   * @returns true if the dependency was deleted, false if not found
+   */
+  removeBlockerDependency(blockedTodoId: string, blockerTodoId: string): boolean {
+    const db = databaseService.getDb();
+    
+    const stmt = db.prepare(`
+      DELETE FROM todo_dependencies 
+      WHERE blocked_todo_id = ? AND blocker_todo_id = ?
+    `);
+    
+    // Convert readable IDs to UUIDs
+    const blockedUuid = idMapService.getUuid(blockedTodoId, EntityType.TODO);
+    const blockerUuid = idMapService.getUuid(blockerTodoId, EntityType.TODO);
+    
+    if (!blockedUuid || !blockerUuid) {
+      return false;
+    }
+    
+    const result = stmt.run(blockedUuid, blockerUuid);
+    return result.changes > 0;
+  }
+
+  /**
+   * Get all blockers for a specific todo
+   * 
+   * Returns the todos that are blocking the specified todo.
+   * 
+   * @param todoId The task-* ID of the blocked todo
+   * @returns Array of blocker Todos
+   */
+  getBlockersForTodo(todoId: string): Todo[] {
+    const db = databaseService.getDb();
+    const stmt = db.prepare(`
+      SELECT t.* FROM todos t
+      INNER JOIN todo_dependencies td ON t.id = td.blocker_todo_id
+      WHERE td.blocked_todo_id = ?
+      ORDER BY t.title
+    `);
+    
+    // Convert readable ID to UUID
+    const uuid = idMapService.getUuid(todoId, EntityType.TODO);
+    if (!uuid) return [];
+    
+    const rows = stmt.all(uuid) as any[];
+    
+    return rows.map(row => {
+      const todo = this.rowToTodo(row);
+      todo.tags = this.getTagIds(todo.id);
+      todo.tagNames = tagService.getTagNames(todo.tags);
+      return todo;
+    });
+  }
+
+  /**
+   * Get all todos blocked by a specific todo
+   * 
+   * Returns the todos that are blocked by the specified todo.
+   * 
+   * @param todoId The task-* ID of the blocker todo
+   * @returns Array of blocked Todo IDs (task-*)
+   */
+  getTodosBlockedBy(todoId: string): string[] {
+    const db = databaseService.getDb();
+    const stmt = db.prepare(`
+      SELECT blocked_todo_id FROM todo_dependencies
+      WHERE blocker_todo_id = ?
+      ORDER BY blocked_todo_id
+    `);
+    
+    // Convert readable ID to UUID
+    const uuid = idMapService.getUuid(todoId, EntityType.TODO);
+    if (!uuid) return [];
+    
+    const rows = stmt.all(uuid) as any[];
+    
+    // Convert UUIDs back to task-* format
+    return rows.map(row => {
+      return idMapService.getHumanReadableId(row.blocked_todo_id, EntityType.TODO);
+    });
+  }
+
+  /**
+   * Get all blocker IDs (in task-* format) for a todo
+   * 
+   * @param todoId The task-* ID of the blocked todo
+   * @returns Array of blocker task-* IDs
+   */
+  getBlockerIds(todoId: string): string[] {
+    const db = databaseService.getDb();
+    const stmt = db.prepare(`
+      SELECT blocker_todo_id FROM todo_dependencies
+      WHERE blocked_todo_id = ?
+      ORDER BY blocker_todo_id
+    `);
+    
+    // Convert readable ID to UUID
+    const uuid = idMapService.getUuid(todoId, EntityType.TODO);
+    if (!uuid) return [];
+    
+    const rows = stmt.all(uuid) as any[];
+    
+    // Convert UUIDs back to task-* format
+    return rows.map(row => {
+      return idMapService.getHumanReadableId(row.blocker_todo_id, EntityType.TODO);
+    });
+  }
+
+  /**
+   * Get all tag IDs (in tag-* format) for a todo
+   *
+   * @param todoId The task-* ID of the todo
+   * @returns Array of tag-* IDs
+   */
+  getTagIds(todoId: string): string[] {
+    const db = databaseService.getDb();
+    const stmt = db.prepare(`
+      SELECT tag_id FROM todo_tags
+      WHERE todo_id = ?
+      ORDER BY tag_id
+    `);
+    
+    // Convert readable ID to UUID
+    const uuid = idMapService.getUuid(todoId, EntityType.TODO);
+    if (!uuid) return [];
+    
+    const rows = stmt.all(uuid) as any[];
+    
+    // Convert UUIDs back to tag-* format
+    return rows.map(row => {
+      return idMapService.getHumanReadableId(row.tag_id, EntityType.TAG);
+    });
+  }
+
+  /**
+   * Remove all dependencies for a todo (both blocked and blocking)
+   *
+   * This is useful when deleting a todo to clean up all relationships.
+   *
+   * @param todoId The task-* ID of the todo
+   * @returns number of dependencies deleted
+   */
+  removeAllDependencies(todoId: string): number {
+    const db = databaseService.getDb();
+    
+    // Convert readable ID to UUID
+    const uuid = idMapService.getUuid(todoId, EntityType.TODO);
+    if (!uuid) return 0;
+    
+    // Delete both: this todo blocking others AND this todo being blocked
+    const stmt = db.prepare(`
+      DELETE FROM todo_dependencies
+      WHERE blocked_todo_id = ? OR blocker_todo_id = ?
+    `);
+    
+    const result = stmt.run(uuid, uuid);
+    return result.changes;
   }
 }
 

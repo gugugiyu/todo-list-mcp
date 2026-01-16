@@ -49,22 +49,60 @@ class DatabaseService {
   /**
    * Initialize the database schema
    * 
-   * This creates the todos table if it doesn't already exist.
+   * This creates the todos, tags, todo_tags, and todo_dependencies tables if they don't already exist.
    * The schema design incorporates:
    * - TEXT primary key for UUID compatibility
    * - NULL completedAt to represent incomplete todos
    * - Timestamp fields for tracking creation and updates
+   * - Junction table (todo_tags) for N-N relationship between todos and tags
+   * - Junction table (todo_dependencies) for task blocking relationships
    */
-  private initSchema(): void {
+  private initSchema(): void {    
     // Create todos table if it doesn't exist
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS todos (
         id TEXT PRIMARY KEY,
         title TEXT NOT NULL,
+        priority TEXT NOT NULL,
         description TEXT NOT NULL,
         completedAt TEXT NULL, -- ISO timestamp, NULL if not completed
         createdAt TEXT NOT NULL,
         updatedAt TEXT NOT NULL
+      )
+    `);
+
+    // Create tags table if it doesn't exist
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS tags (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL UNIQUE,
+        color TEXT NULL,
+        createdAt TEXT NOT NULL,
+        updatedAt TEXT NOT NULL
+      )
+    `);
+
+    // Create junction table for N-N relationship between todos and tags
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS todo_tags (
+        todo_id TEXT NOT NULL,
+        tag_id TEXT NOT NULL,
+        createdAt TEXT NOT NULL,
+        PRIMARY KEY (todo_id, tag_id),
+        FOREIGN KEY (todo_id) REFERENCES todos(id) ON DELETE CASCADE,
+        FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE
+      )
+    `);
+
+    // Create junction table for task dependencies (which tasks block which)
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS todo_dependencies (
+        blocked_todo_id TEXT NOT NULL,
+        blocker_todo_id TEXT NOT NULL,
+        createdAt TEXT NOT NULL,
+        PRIMARY KEY (blocked_todo_id, blocker_todo_id),
+        FOREIGN KEY (blocked_todo_id) REFERENCES todos(id) ON DELETE CASCADE,
+        FOREIGN KEY (blocker_todo_id) REFERENCES todos(id) ON DELETE CASCADE
       )
     `);
   }

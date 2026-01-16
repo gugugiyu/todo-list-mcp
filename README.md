@@ -14,13 +14,16 @@ A Model Context Protocol (MCP) server that provides a comprehensive API for mana
 - **Update todos**: Modify existing tasks
 - **Complete todos**: Mark tasks as done
 - **Delete todos**: Remove tasks from the list
-- **Search todos**: Find tasks by title or creation date
+- **Search todos**: Find tasks by title, date, or priority
 - **Summarize todos**: Get a quick overview of active tasks
+- **Tag management**: Organize todos with custom tags and colors
+- **Task dependencies**: Mark tasks as blocked by other tasks (blocked_by relationships)
 
 ## Tools
 
 This MCP server exposes the following tools:
 
+### Todo Management
 1. `create-todo`: Create a new todo item
 2. `list-todos`: List all todos
 3. `get-todo`: Get a specific todo by ID
@@ -29,8 +32,54 @@ This MCP server exposes the following tools:
 6. `delete-todo`: Delete a todo
 7. `search-todos-by-title`: Search todos by title (case-insensitive partial match)
 8. `search-todos-by-date`: Search todos by creation date (format: YYYY-MM-DD)
-9. `list-active-todos`: List all non-completed todos
-10. `summarize-active-todos`: Generate a summary of all active (non-completed) todos
+9. `search-todos-by-priority`: Search todos by priority level
+10. `list-active-todos`: List all non-completed todos
+11. `summarize-active-todos`: Generate a summary of all active (non-completed) todos
+
+### Tag Management
+12. `create-tag`: Create a new tag with optional color
+13. `list-tags`: List all available tags
+14. `get-tag`: Get a specific tag by ID
+15. `get-tags`: Get multiple tags by IDs (batch operation for efficiency)
+16. `update-tag`: Update a tag's name or color
+17. `delete-tag`: Delete a tag (removes from all todos)
+18. `search-tags`: Search tags by name
+19. `add-tag-to-todo`: Assign a tag to a todo
+20. `remove-tag-from-todo`: Remove a tag from a todo
+21. `get-todo-tags`: Get all tags assigned to a todo
+22. `search-todos-by-tag`: Find all todos with a specific tag
+
+### Task Dependencies (blocked_by)
+23. `add-blocker-dependency`: Mark a todo as blocked by another todo
+24. `remove-blocker-dependency`: Remove a blocker dependency
+25. `get-blockers`: Get all todos blocking a specific todo
+26. `get-blocked-todos`: Get all todos blocked by a specific todo
+
+## Data Model
+
+### Todo Item
+Each todo item contains:
+- `id`: Unique task identifier (format: `task-*`, LLM-friendly mapping to UUID)
+- `title`: Task title
+- `description`: Markdown-formatted description
+- `priority`: Priority level (URGENT, HIGH, MEDIUM, LOW, LOWEST)
+- `completed`: Boolean completion status
+- `completedAt`: ISO timestamp when completed (null if not completed)
+- `blocked_by`: Array of task-* IDs that block this todo (task dependencies)
+- `createdAt`: ISO timestamp of creation
+- `updatedAt`: ISO timestamp of last update
+
+### Tag Item
+Each tag contains:
+- `id`: Unique UUID identifier
+- `name`: Tag name (unique, case-insensitive)
+- `color`: Optional hex color code (format: #RRGGBB)
+- `createdAt`: ISO timestamp of creation
+- `updatedAt`: ISO timestamp of last update
+
+### Relationships
+- **Todo ↔ Tag**: N-N relationship (many todos can have many tags)
+- **Todo → Todo (blocked_by)**: A todo can be blocked by one or more other todos, creating a directed dependency graph
 
 ## Installation
 
