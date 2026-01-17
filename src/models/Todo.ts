@@ -14,22 +14,39 @@
 import { z } from 'zod';
 import { v4 as uuidv4 } from 'uuid';
 
+
+export enum Priority {
+  URGENT = "URGENT",
+  HIGH = "HIGH",
+  MEDIUM = "MEDIUM",
+  LOW = "LOW",
+  LOWEST = "LOWEST",
+}
+
 /**
  * Todo Interface
- * 
+ *
  * This defines the structure of a Todo item in our application.
  * We've designed it with several important considerations:
  * - IDs use UUID for uniqueness across systems
  * - Timestamps track creation and updates for data lifecycle management
  * - Description supports markdown for rich text formatting
  * - Completion status is tracked both as a boolean flag and with a timestamp
+ * - blocked_by field tracks task dependencies (uses task-* IDs for LLM-friendliness)
+ * - tagNames field tracks associated tag names for display
  */
 export interface Todo {
   id: string;
+  username: string; // The user who owns this todo
+  priority: Priority;
   title: string;
   description: string; // Markdown format
   completed: boolean; // Computed from completedAt for backward compatibility
   completedAt: string | null; // ISO timestamp when completed, null if not completed
+  blocked_by: string[]; // Array of task-* IDs that block this todo
+  tagNames: string[]; // Array of tag names for display
+  projectId: string | null; // Reference to project (project-*) if assigned, null otherwise
+  projectName: string | null; // Project name for display
   createdAt: string;
   updatedAt: string;
 }
@@ -46,27 +63,30 @@ export interface Todo {
  * - Makes the API more intuitive by clearly defining what each operation expects
  */
 
-// Schema for creating a new todo - requires title and description
+// Schema for creating a new todo - requires username, title and description
 export const CreateTodoSchema = z.object({
+  username: z.string().min(1, "Username is required"),
   title: z.string().min(1, "Title is required"),
   description: z.string().min(1, "Description is required"),
+  priority: z.nativeEnum(Priority, {"message": "Invalid priority value"})
 });
 
 // Schema for updating a todo - requires ID, title and description are optional
 export const UpdateTodoSchema = z.object({
-  id: z.string().uuid("Invalid Todo ID"),
+  id: z.string().regex(/task-[\d]+/, "Invalid ID value"),
   title: z.string().min(1, "Title is required").optional(),
   description: z.string().min(1, "Description is required").optional(),
+  priority: z.nativeEnum(Priority, {"message": "Invalid priority value"}).optional()
 });
 
 // Schema for completing a todo - requires only ID
 export const CompleteTodoSchema = z.object({
-  id: z.string().uuid("Invalid Todo ID"),
+  id: z.string().regex(/task-[\d]+/, "Invalid ID value"),
 });
 
 // Schema for deleting a todo - requires only ID
 export const DeleteTodoSchema = z.object({
-  id: z.string().uuid("Invalid Todo ID"),
+  id: z.string().regex(/task-[\d]+/, "Invalid ID value"),
 });
 
 // Schema for searching todos by title - requires search term
@@ -78,6 +98,11 @@ export const SearchTodosByTitleSchema = z.object({
 export const SearchTodosByDateSchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be in YYYY-MM-DD format"),
 });
+
+// Schema for searching with a specific priority
+export const SearchByPrioritySchema = z.object({
+  priority: z.nativeEnum(Priority, {"message": "Invalid priority value"}),
+})
 
 /**
  * Factory Function: createTodo
@@ -95,11 +120,17 @@ export function createTodo(data: z.infer<typeof CreateTodoSchema>): Todo {
   const now = new Date().toISOString();
   return {
     id: uuidv4(),
+    username: data.username,
     title: data.title,
+    priority: data.priority,
     description: data.description,
     completed: false,
     completedAt: null,
+    blocked_by: [],
+    tagNames: [],
+    projectId: null,
+    projectName: null,
     createdAt: now,
     updatedAt: now,
   };
-} 
+}

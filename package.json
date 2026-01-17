@@ -8,7 +8,12 @@
     "start": "node dist/index.js",
     "dev": "npm run build && npm start",
     "test": "npm run build && node dist/client.js",
-    "inspector": "npx @modelcontextprotocol/inspector node dist/index.js"
+    "test:unit": "vitest",
+    "test:unit:coverage": "vitest --coverage",
+    "inspector": "npx @modelcontextprotocol/inspector node dist/index.js",
+    "migrate": "node dist/scripts/migrate.js migrate",
+    "migrate:rollback": "node dist/scripts/migrate.js rollback",
+    "migrate:status": "node dist/scripts/migrate.js status"
   },
   "keywords": [
     "mcp",
@@ -29,6 +34,9 @@
     "@modelcontextprotocol/inspector": "^0.5.1",
     "@types/better-sqlite3": "^7.6.9",
     "@types/node": "^20.11.28",
-    "@types/uuid": "^9.0.8"
+    "@types/uuid": "^9.0.8",
+    "@vitest/coverage-v8": "^4.0.17",
+    "tsx": "^4.21.0",
+    "vitest": "^4.0.17"
   }
 }
