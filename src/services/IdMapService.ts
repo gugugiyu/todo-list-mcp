@@ -20,6 +20,7 @@
 export enum EntityType {
   TODO = "TASK",
   TAG = "TAG",
+  PROJECT = "PROJECT",
 }
 
 /**
@@ -32,14 +33,23 @@ class IdMapService {
   // Maps for different entity types
   private todoMap: Map<string, string>;   // Maps task-* to UUID
   private tagMap: Map<string, string>;    // Maps tag-* to UUID
+  private projectMap: Map<string, string>; // Maps project-* to UUID
   private todoUuidMap: Map<string, string>; // Maps UUID to task-*
   private tagUuidMap: Map<string, string>;  // Maps UUID to tag-*
+  private projectUuidMap: Map<string, string>; // Maps UUID to project-*
+
+  // Counters to track next ID for each entity type (separate from map size)
+  private todoCounter: number = 0;
+  private tagCounter: number = 0;
+  private projectCounter: number = 0;
 
   constructor() {
     this.todoMap = new Map();
     this.tagMap = new Map();
+    this.projectMap = new Map();
     this.todoUuidMap = new Map();
     this.tagUuidMap = new Map();
+    this.projectUuidMap = new Map();
   }
 
   /**
@@ -54,16 +64,44 @@ class IdMapService {
    */
   getHumanReadableId(uuid: string, entityType: EntityType): string {
     // Check if we already have a mapping for this UUID
-    const uuidMap = entityType === EntityType.TODO ? this.todoUuidMap : this.tagUuidMap;
+    let uuidMap: Map<string, string>;
+    if (entityType === EntityType.TODO) {
+      uuidMap = this.todoUuidMap;
+    } else if (entityType === EntityType.TAG) {
+      uuidMap = this.tagUuidMap;
+    } else {
+      uuidMap = this.projectUuidMap;
+    }
+    
     const existingId = uuidMap.get(uuid);
     if (existingId) {
       return existingId;
     }
 
     // Create a new mapping
-    const idMap = entityType === EntityType.TODO ? this.todoMap : this.tagMap;
-    const prefix = entityType === EntityType.TODO ? "task" : "tag";
-    const newId = `${prefix}-${idMap.size + 1}`;
+    let idMap: Map<string, string>;
+    let prefix: string;
+    if (entityType === EntityType.TODO) {
+      idMap = this.todoMap;
+      prefix = "task";
+    } else if (entityType === EntityType.TAG) {
+      idMap = this.tagMap;
+      prefix = "tag";
+    } else {
+      idMap = this.projectMap;
+      prefix = "project";
+    }
+    
+    // Use counter instead of map size to avoid ID reuse after deletion
+    let counter: number;
+    if (entityType === EntityType.TODO) {
+      counter = ++this.todoCounter;
+    } else if (entityType === EntityType.TAG) {
+      counter = ++this.tagCounter;
+    } else {
+      counter = ++this.projectCounter;
+    }
+    const newId = `${prefix}-${counter}`;
     
     // Store bidirectional mapping
     idMap.set(newId, uuid);
@@ -80,7 +118,14 @@ class IdMapService {
    * @returns The UUID, or undefined if not found
    */
   getUuid(humanReadableId: string, entityType: EntityType): string | undefined {
-    const idMap = entityType === EntityType.TODO ? this.todoMap : this.tagMap;
+    let idMap: Map<string, string>;
+    if (entityType === EntityType.TODO) {
+      idMap = this.todoMap;
+    } else if (entityType === EntityType.TAG) {
+      idMap = this.tagMap;
+    } else {
+      idMap = this.projectMap;
+    }
     return idMap.get(humanReadableId);
   }
 
@@ -94,11 +139,31 @@ class IdMapService {
    * @param entityType The type of entity
    */
   registerMapping(humanReadableId: string, uuid: string, entityType: EntityType): void {
-    const idMap = entityType === EntityType.TODO ? this.todoMap : this.tagMap;
-    const uuidMap = entityType === EntityType.TODO ? this.todoUuidMap : this.tagUuidMap;
+    let idMap: Map<string, string>;
+    let uuidMap: Map<string, string>;
+    if (entityType === EntityType.TODO) {
+      idMap = this.todoMap;
+      uuidMap = this.todoUuidMap;
+    } else if (entityType === EntityType.TAG) {
+      idMap = this.tagMap;
+      uuidMap = this.tagUuidMap;
+    } else {
+      idMap = this.projectMap;
+      uuidMap = this.projectUuidMap;
+    }
     
     idMap.set(humanReadableId, uuid);
     uuidMap.set(uuid, humanReadableId);
+
+    // Update counter if the registered ID has a higher number
+    const idNumber = parseInt(humanReadableId.split('-')[1], 10);
+    if (entityType === EntityType.TODO && idNumber >= this.todoCounter) {
+      this.todoCounter = idNumber;
+    } else if (entityType === EntityType.TAG && idNumber >= this.tagCounter) {
+      this.tagCounter = idNumber;
+    } else if (entityType === EntityType.PROJECT && idNumber >= this.projectCounter) {
+      this.projectCounter = idNumber;
+    }
   }
 
   /**
@@ -111,8 +176,18 @@ class IdMapService {
    * @param entityType The type of entity
    */
   unregisterMapping(humanReadableId: string, uuid: string, entityType: EntityType): void {
-    const idMap = entityType === EntityType.TODO ? this.todoMap : this.tagMap;
-    const uuidMap = entityType === EntityType.TODO ? this.todoUuidMap : this.tagUuidMap;
+    let idMap: Map<string, string>;
+    let uuidMap: Map<string, string>;
+    if (entityType === EntityType.TODO) {
+      idMap = this.todoMap;
+      uuidMap = this.todoUuidMap;
+    } else if (entityType === EntityType.TAG) {
+      idMap = this.tagMap;
+      uuidMap = this.tagUuidMap;
+    } else {
+      idMap = this.projectMap;
+      uuidMap = this.projectUuidMap;
+    }
     
     idMap.delete(humanReadableId);
     uuidMap.delete(uuid);
@@ -127,8 +202,18 @@ class IdMapService {
    * @returns The next ID that would be assigned
    */
   getNextId(entityType: EntityType): string {
-    const idMap = entityType === EntityType.TODO ? this.todoMap : this.tagMap;
-    const prefix = entityType === EntityType.TODO ? "task" : "tag";
+    let idMap: Map<string, string>;
+    let prefix: string;
+    if (entityType === EntityType.TODO) {
+      idMap = this.todoMap;
+      prefix = "task";
+    } else if (entityType === EntityType.TAG) {
+      idMap = this.tagMap;
+      prefix = "tag";
+    } else {
+      idMap = this.projectMap;
+      prefix = "project";
+    }
     return `${prefix}-${idMap.size + 1}`;
   }
 
@@ -141,10 +226,20 @@ class IdMapService {
    * @returns Array of [humanReadableId, uuid] tuples
    */
   getAllMappings(entityType: EntityType): Array<[string, string]> {
-    const idMap = entityType === EntityType.TODO ? this.todoMap : this.tagMap;
+    let idMap: Map<string, string>;
+    if (entityType === EntityType.TODO) {
+      idMap = this.todoMap;
+    } else if (entityType === EntityType.TAG) {
+      idMap = this.tagMap;
+    } else {
+      idMap = this.projectMap;
+    }
     return Array.from(idMap.entries());
   }
 }
+
+// Export the class for testing (allows creating fresh instances)
+export { IdMapService };
 
 // Create a singleton instance for use throughout the application
 export const idMapService = new IdMapService();

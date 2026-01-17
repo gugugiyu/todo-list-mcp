@@ -33,18 +33,20 @@ export enum Priority {
  * - Description supports markdown for rich text formatting
  * - Completion status is tracked both as a boolean flag and with a timestamp
  * - blocked_by field tracks task dependencies (uses task-* IDs for LLM-friendliness)
- * - tags field tracks associated tags (uses tag-* IDs for LLM-friendliness)
+ * - tagNames field tracks associated tag names for display
  */
 export interface Todo {
   id: string;
+  username: string; // The user who owns this todo
   priority: Priority;
   title: string;
   description: string; // Markdown format
   completed: boolean; // Computed from completedAt for backward compatibility
   completedAt: string | null; // ISO timestamp when completed, null if not completed
   blocked_by: string[]; // Array of task-* IDs that block this todo
-  tags: string[]; // Array of tag-* IDs assigned to this todo
   tagNames: string[]; // Array of tag names for display
+  projectId: string | null; // Reference to project (project-*) if assigned, null otherwise
+  projectName: string | null; // Project name for display
   createdAt: string;
   updatedAt: string;
 }
@@ -61,8 +63,9 @@ export interface Todo {
  * - Makes the API more intuitive by clearly defining what each operation expects
  */
 
-// Schema for creating a new todo - requires title and description
+// Schema for creating a new todo - requires username, title and description
 export const CreateTodoSchema = z.object({
+  username: z.string().min(1, "Username is required"),
   title: z.string().min(1, "Title is required"),
   description: z.string().min(1, "Description is required"),
   priority: z.nativeEnum(Priority, {"message": "Invalid priority value"})
@@ -117,14 +120,16 @@ export function createTodo(data: z.infer<typeof CreateTodoSchema>): Todo {
   const now = new Date().toISOString();
   return {
     id: uuidv4(),
+    username: data.username,
     title: data.title,
     priority: data.priority,
     description: data.description,
     completed: false,
     completedAt: null,
     blocked_by: [],
-    tags: [],
     tagNames: [],
+    projectId: null,
+    projectName: null,
     createdAt: now,
     updatedAt: now,
   };

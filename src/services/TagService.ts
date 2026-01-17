@@ -7,17 +7,42 @@
  */
 import { Tag, createTag, CreateTagSchema, UpdateTagSchema } from '../models/Tag.js';
 import { z } from 'zod';
+import Database from 'better-sqlite3';
 import { databaseService } from './DatabaseService.js';
-import { idMapService, EntityType } from './IdMapService.js';
+import { IdMapService, EntityType, idMapService } from './IdMapService.js';
 
 /**
  * TagService Class
- * 
+ *
  * This service follows the repository pattern to provide a clean
  * interface for working with tags. It encapsulates all database
  * operations and business logic in one place.
  */
 class TagService {
+  private db: Database.Database;
+  private idMap: IdMapService;
+
+  constructor(db?: Database.Database, idMap?: IdMapService) {
+    // Allow dependency injection for testing
+    this.db = db || databaseService.getDb();
+    this.idMap = idMap || idMapService;
+  }
+
+  /**
+   * Get the database instance
+   * Useful for testing to verify database state
+   */
+  getDb(): Database.Database {
+    return this.db;
+  }
+
+  /**
+   * Get the IdMapService instance
+   * Useful for testing to verify ID mappings
+   */
+  getIdMap(): IdMapService {
+    return this.idMap;
+  }
   /**
    * Create a new tag
    * 
@@ -32,39 +57,41 @@ class TagService {
    * @throws Error if tag name already exists
    */
   createTag(data: z.infer<typeof CreateTagSchema>): Tag {
+    // Validate input data
+    const validatedData = CreateTagSchema.parse(data);
+    
+    // Check if a tag with the same name already exists (case-insensitive)
+    const existingTag = this.getTagByName(validatedData.name);
+    if (existingTag) {
+      throw new Error(`Tag with name "${validatedData.name}" already exists`);
+    }
+    
     // Use the factory function to create a Tag with proper defaults
-    const tag = createTag(data);
+    const tag = createTag(validatedData);
     
     // Get the database instance
-    const db = databaseService.getDb();
+    const db = this.db;
     
-    try {
-      // Prepare the SQL statement for inserting a new tag
-      const stmt = db.prepare(`
-        INSERT INTO tags (id, name, color, createdAt, updatedAt)
-        VALUES (?, ?, ?, ?, ?)
-      `);
-      
-      // Execute the statement with the tag's data
-      stmt.run(
-        tag.id,
-        tag.name,
-        tag.color || null,
-        tag.createdAt,
-        tag.updatedAt
-      );
-      
-      // Register the human-readable ID mapping
-      const humanReadableId = idMapService.getHumanReadableId(tag.id, EntityType.TAG);
-      
-      // Update the tag's id to use the human-readable version
-      tag.id = humanReadableId;
-    } catch (error: any) {
-      if (error.message.includes('UNIQUE constraint failed')) {
-        throw new Error(`Tag with name "${data.name}" already exists`);
-      }
-      throw error;
-    }
+    // Prepare the SQL statement for inserting a new tag
+    const stmt = db.prepare(`
+      INSERT INTO tags (id, name, color, createdAt, updatedAt)
+      VALUES (?, ?, ?, ?, ?)
+    `);
+    
+    // Execute the statement with the tag's data
+    stmt.run(
+      tag.id,
+      tag.name,
+      tag.color || null,
+      tag.createdAt,
+      tag.updatedAt
+    );
+    
+    // Register the human-readable ID mapping
+    const humanReadableId = this.idMap.getHumanReadableId(tag.id, EntityType.TAG);
+    
+    // Update the tag's id to use the human-readable version
+    tag.id = humanReadableId;
     
     // Return the created tag
     return tag;
@@ -81,7 +108,7 @@ class TagService {
    * @returns The Tag if found, undefined otherwise
    */
   getTag(id: string): Tag | undefined {
-    const db = databaseService.getDb();
+    const db = this.db;
     
     // Use parameterized query to prevent SQL injection
     const stmt = db.prepare('SELECT * FROM tags WHERE id = ?');
@@ -89,7 +116,7 @@ class TagService {
     // Check if this is a human-readable ID, if so convert to UUID
     let uuid = id;
     if (id.startsWith('tag-')) {
-      const resolvedUuid = idMapService.getUuid(id, EntityType.TAG);
+      const resolvedUuid = this.idMap.getUuid(id, EntityType.TAG);
       if (!resolvedUuid) return undefined;
       uuid = resolvedUuid;
     }
@@ -110,7 +137,7 @@ class TagService {
    * @returns The Tag if found, undefined otherwise
    */
   getTagByName(name: string): Tag | undefined {
-    const db = databaseService.getDb();
+    const db = this.db;
     const stmt = db.prepare('SELECT * FROM tags WHERE name = ? COLLATE NOCASE');
     const row = stmt.get(name) as any;
 
@@ -121,14 +148,34 @@ class TagService {
   /**
    * Get all tags
    *
-   * This method returns all tags in the database without filtering.
+   * This method returns all tags in the database with optional pagination.
    *
-   * @returns Array of all Tags
+   * @param limit Maximum number of tags to return (default: all)
+   * @param offset Number of tags to skip (default: 0)
+   * @returns Array of Tags
    */
-  getAllTags(): Tag[] {
-    const db = databaseService.getDb();
-    const stmt = db.prepare('SELECT * FROM tags ORDER BY name');
-    const rows = stmt.all() as any[];
+  getAllTags(limit?: number, offset?: number): Tag[] {
+    const db = this.db;
+    let query = 'SELECT * FROM tags ORDER BY name';
+    const params: any[] = [];
+    
+    // Add pagination if specified
+    // SQLite requires LIMIT when using OFFSET, so we use a large number if limit is not specified
+    if (limit !== undefined) {
+      query += ' LIMIT ?';
+      params.push(limit);
+    } else if (offset !== undefined) {
+      // If offset is provided without limit, use a very large limit
+      query += ' LIMIT ?';
+      params.push(2147483647); // Maximum SQLite integer
+    }
+    if (offset !== undefined) {
+      query += ' OFFSET ?';
+      params.push(offset);
+    }
+    
+    const stmt = db.prepare(query);
+    const rows = stmt.all(...params) as any[];
     
     // Convert each database row to a Tag object
     return rows.map(row => this.rowToTag(row));
@@ -147,12 +194,12 @@ class TagService {
       return [];
     }
 
-    const db = databaseService.getDb();
+    const db = this.db;
     
     // Resolve all human-readable IDs to UUIDs
     const resolvedIds = ids.map(id => {
       if (id.startsWith('tag-')) {
-        const resolvedUuid = idMapService.getUuid(id, EntityType.TAG);
+        const resolvedUuid = this.idMap.getUuid(id, EntityType.TAG);
         return resolvedUuid;
       }
       return id;
@@ -186,7 +233,7 @@ class TagService {
     // Resolve human-readable ID to UUID if needed
     let uuid = data.id;
     if (data.id.startsWith('tag-')) {
-      const resolvedUuid = idMapService.getUuid(data.id, EntityType.TAG);
+      const resolvedUuid = this.idMap.getUuid(data.id, EntityType.TAG);
       if (!resolvedUuid) return undefined;
       uuid = resolvedUuid;
     }
@@ -198,7 +245,7 @@ class TagService {
     // Create a timestamp for the update
     const updatedAt = new Date().toISOString();
     
-    const db = databaseService.getDb();
+    const db = this.db;
     
     try {
       const stmt = db.prepare(`
@@ -236,12 +283,12 @@ class TagService {
    * @returns true if deleted, false if not found or not deleted
    */
   deleteTag(id: string): boolean {
-    const db = databaseService.getDb();
+    const db = this.db;
     
     // Resolve human-readable ID to UUID if needed
     let uuid = id;
     if (id.startsWith('tag-')) {
-      const resolvedUuid = idMapService.getUuid(id, EntityType.TAG);
+      const resolvedUuid = this.idMap.getUuid(id, EntityType.TAG);
       if (!resolvedUuid) return false;
       uuid = resolvedUuid;
     }
@@ -251,7 +298,7 @@ class TagService {
     
     // Unregister the mapping if deletion was successful
     if (result.changes > 0 && id.startsWith('tag-')) {
-      idMapService.unregisterMapping(id, uuid, EntityType.TAG);
+      this.idMap.unregisterMapping(id, uuid, EntityType.TAG);
     }
 
     // Check if any rows were affected
@@ -271,10 +318,10 @@ class TagService {
     // Add wildcards to the search term for partial matching
     const searchTerm = `%${name}%`;
     
-    const db = databaseService.getDb();
+    const db = this.db;
     
     // COLLATE NOCASE makes the search case-insensitive
-    const stmt = db.prepare('SELECT * FROM tags WHERE name LIKE ? COLLATE NOCASE ORDER BY name');
+    const stmt = db.prepare('SELECT * FROM tags WHERE name COLLATE NOCASE LIKE ? ORDER BY name');
     const rows = stmt.all(searchTerm) as any[];
     
     return rows.map(row => this.rowToTag(row));
@@ -285,27 +332,34 @@ class TagService {
    *
    * This method creates a relationship between a todo and a tag.
    * If the relationship already exists, it does nothing (idempotent).
+   * Enforces maximum of 4 tags per todo.
    *
    * @param todoId The task-* ID of the todo
    * @param tagId The tag-* ID (human-readable) or UUID of the tag
    * @returns true if the relationship was created, false if it already existed
    */
   addTagToTodo(todoId: string, tagId: string): boolean {
-    const db = databaseService.getDb();
+    const db = this.db;
     
     // Resolve human-readable IDs to UUIDs if needed
     let tagUuid = tagId;
     if (tagId.startsWith('tag-')) {
-      const resolvedUuid = idMapService.getUuid(tagId, EntityType.TAG);
+      const resolvedUuid = this.idMap.getUuid(tagId, EntityType.TAG);
       if (!resolvedUuid) {
         throw new Error(`Tag with ID ${tagId} not found`);
       }
       tagUuid = resolvedUuid;
     }
     
-    const todoUuid = idMapService.getUuid(todoId, EntityType.TODO);
+    const todoUuid = this.idMap.getUuid(todoId, EntityType.TODO);
     if (!todoUuid) {
       throw new Error(`Todo with ID ${todoId} not found`);
+    }
+
+    // Check current tag count before adding (max 4 tags per todo)
+    const currentTags = this.getTagsForTodo(todoId);
+    if (currentTags.length >= 4) {
+      throw new Error("Maximum of 4 tags allowed per todo");
     }
     
     try {
@@ -334,21 +388,21 @@ class TagService {
    * @returns true if the relationship was deleted, false if not found
    */
   removeTagFromTodo(todoId: string, tagId: string): boolean {
-    const db = databaseService.getDb();
+    const db = this.db;
     
     // Resolve human-readable IDs to UUIDs if needed
     let tagUuid = tagId;
     if (tagId.startsWith('tag-')) {
-      const resolvedUuid = idMapService.getUuid(tagId, EntityType.TAG);
+      const resolvedUuid = this.idMap.getUuid(tagId, EntityType.TAG);
       if (!resolvedUuid) {
-        throw new Error(`Tag with ID ${tagId} not found`);
+        return false; // Tag not found, return false
       }
       tagUuid = resolvedUuid;
     }
     
-    const todoUuid = idMapService.getUuid(todoId, EntityType.TODO);
+    const todoUuid = this.idMap.getUuid(todoId, EntityType.TODO);
     if (!todoUuid) {
-      throw new Error(`Todo with ID ${todoId} not found`);
+      return false; // Todo not found, return false
     }
     
     const stmt = db.prepare('DELETE FROM todo_tags WHERE todo_id = ? AND tag_id = ?');
@@ -363,10 +417,10 @@ class TagService {
    * @returns Array of Tags associated with the todo
    */
   getTagsForTodo(todoId: string): Tag[] {
-    const db = databaseService.getDb();
+    const db = this.db;
     
     // Resolve human-readable ID to UUID if needed
-    const todoUuid = idMapService.getUuid(todoId, EntityType.TODO);
+    const todoUuid = this.idMap.getUuid(todoId, EntityType.TODO);
     if (!todoUuid) {
       return [];
     }
@@ -389,12 +443,12 @@ class TagService {
    * @returns Array of todo IDs (task-*) that have this tag
    */
   getTodosWithTag(tagId: string): string[] {
-    const db = databaseService.getDb();
+    const db = this.db;
     
     // Resolve human-readable ID to UUID if needed
     let uuid = tagId;
     if (tagId.startsWith('tag-')) {
-      const resolvedUuid = idMapService.getUuid(tagId, EntityType.TAG);
+      const resolvedUuid = this.idMap.getUuid(tagId, EntityType.TAG);
       if (!resolvedUuid) {
         return []; // Tag not found, return empty array
       }
@@ -420,7 +474,7 @@ class TagService {
    * @returns number of relationships deleted
    */
   removeAllTagsFromTodo(todoId: string): number {
-    const db = databaseService.getDb();
+    const db = this.db;
     const stmt = db.prepare('DELETE FROM todo_tags WHERE todo_id = ?');
     const result = stmt.run(todoId);
     return result.changes;
@@ -453,7 +507,7 @@ class TagService {
    * @returns A properly formatted Tag object
    */
   private rowToTag(row: any): Tag {
-    const humanReadableId = idMapService.getHumanReadableId(row.id, EntityType.TAG);
+    const humanReadableId = this.idMap.getHumanReadableId(row.id, EntityType.TAG);
     return {
       id: humanReadableId,
       name: row.name,
@@ -463,6 +517,9 @@ class TagService {
     };
   }
 }
+
+// Export class for testing (allows creating fresh instances with custom dependencies)
+export { TagService };
 
 // Create a singleton instance for use throughout the application
 export const tagService = new TagService();
