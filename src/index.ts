@@ -40,13 +40,22 @@ import {
   TagTodoSchema
 } from "./models/Tag.js";
 
+import {
+  CreateProjectSchema,
+  UpdateProjectSchema,
+  ProjectIdSchema,
+  SearchProjectsByNameSchema
+} from "./models/Project.js";
+
 // Import services
 import { todoService } from "./services/TodoService.js";
 import { databaseService } from "./services/DatabaseService.js";
 import { tagService } from "./services/TagService.js";
+import { userService } from "./services/UserService.js";
+import { projectService } from "./services/ProjectService.js";
 
 // Import utilities
-import { createSuccessResponse, createErrorResponse, formatTodo, formatTodoList, formatTag, formatTagList, formatTagNames } from "./utils/formatters.js";
+import { createSuccessResponse, createErrorResponse, formatTodo, formatTodoList, formatTag, formatTagList, formatTagNames, formatProject, formatProjectList } from "./utils/formatters.js";
 import { config } from "./config.js";
 
 /**
@@ -110,13 +119,14 @@ server.tool(
   "create-todo",
   "Create a new todo item",
   {
+    username: z.string().min(1, "Username is required"),
     title: z.string().min(1, "Title is required"),
     description: z.string().min(1, "Description is required"),
     priority: z.nativeEnum(Priority, {"message": "Invalid priority value"})
   },
-  async ({ title, description, priority }) => {
+  async ({ username, title, description, priority }) => {
     const result = await safeExecute(() => {
-      const validatedData = CreateTodoSchema.parse({ title, description, priority });
+      const validatedData = CreateTodoSchema.parse({ username, title, description, priority });
       const newTodo = todoService.createTodo(validatedData);
       return formatTodo(newTodo);
     }, "Failed to create todo");
@@ -131,19 +141,36 @@ server.tool(
 
 /**
  * Tool 2: List all todos
- * 
+ *
  * This tool:
- * 1. Retrieves all todos from the service
+ * 1. Retrieves todos from the service with optional filtering
  * 2. Formats them as a list
  * 3. Returns the formatted list
+ *
+ * The isCompleted parameter allows filtering:
+ * - true: only completed todos
+ * - false: only active (non-completed) todos
+ * - undefined: all todos
  */
 server.tool(
   "list-todos",
-  "List all todos",
-  {},
-  async () => {
+  "List all todos with optional filtering by completion status",
+  {
+    username: z.string().min(1, "Username is required"),
+    useRelativeTime: z.boolean().optional(),
+    limit: z.number().optional(),
+    offset: z.number().optional(),
+    isCompleted: z.boolean().optional()
+  },
+  async ({ username, useRelativeTime, limit, offset, isCompleted }) => {
     const result = await safeExecute(() => {
-      const todos = todoService.getAllTodos();
+      const todos = todoService.getAllTodos(
+        username,
+        useRelativeTime || false,
+        limit || 100,
+        offset || 0,
+        isCompleted
+      );
       return formatTodoList(todos);
     }, "Failed to list todos");
 
@@ -167,13 +194,14 @@ server.tool(
   "get-todo",
   "Get a specific todo by ID",
   {
+    username: z.string().min(1, "Username is required"),
     id: z.string().regex(/task-[\d]+/, "Invalid ID value"),
   },
-  async ({ id }) => {
+  async ({ username, id }) => {
     const result = await safeExecute(() => {
-      const todo = todoService.getTodo(id);
+      const todo = todoService.getTodo(id, username);
       if (!todo) {
-        throw new Error(`Todo with ID ${id} not found. This can happen if the id hash map hasn't been initialized yet. Suggest fix: use list-todos to list all todo.`);
+        throw new Error(`Todo with ID ${id} not found.`);
       }
       return formatTodo(todo);
     }, "Failed to get todo");
@@ -199,21 +227,22 @@ server.tool(
   "update-todo",
   "Update a todo title or description",
   {
+    username: z.string().min(1, "Username is required"),
     id: z.string().regex(/task-[\d]+/, "Invalid ID value"),
     title: z.string().min(1, "Title is required").optional(),
     description: z.string().min(1, "Description is required").optional(),
     priority: z.nativeEnum(Priority, {"message": "Invalid priority value"}).optional(),
   },
-  async ({ id, title, description, priority }) => {
+  async ({ username, id, title, description, priority }) => {
     const result = await safeExecute(() => {
       const validatedData = UpdateTodoSchema.parse({ id, title, description, priority });
 
       // Ensure at least one field is being updated
       if (!title && !description && priority === undefined) {
-        throw new Error("At least one field (title or description) must be provided");
+        throw new Error("At least one field (title, description, or priority) must be provided");
       }
 
-      const updatedTodo = todoService.updateTodo(validatedData);
+      const updatedTodo = todoService.updateTodo(validatedData, username);
       if (!updatedTodo) {
         throw new Error(`Todo with ID ${id} not found`);
       }
@@ -247,12 +276,13 @@ server.tool(
   "complete-todo",
   "Mark a todo as completed",
   {
+    username: z.string().min(1, "Username is required"),
     id: z.string().regex(/task-[\d]+/, "Invalid ID value"),
   },
-  async ({ id }) => {
+  async ({ username, id }) => {
     const result = await safeExecute(() => {
       const validatedData = CompleteTodoSchema.parse({ id });
-      const completedTodo = todoService.completeTodo(validatedData.id);
+      const completedTodo = todoService.completeTodo(validatedData.id, username);
       
       if (!completedTodo) {
         throw new Error(`Todo with ID ${id} not found`);
@@ -282,18 +312,19 @@ server.tool(
   "delete-todo",
   "Delete a todo",
   {
+    username: z.string().min(1, "Username is required"),
     id: z.string().regex(/task-[\d]+/, "Invalid ID value"),
   },
-  async ({ id }) => {
+  async ({ username, id }) => {
     const result = await safeExecute(() => {
       const validatedData = DeleteTodoSchema.parse({ id });
-      const todo = todoService.getTodo(validatedData.id);
+      const todo = todoService.getTodo(validatedData.id, username);
       
       if (!todo) {
         throw new Error(`Todo with ID ${id} not found`);
       }
       
-      const success = todoService.deleteTodo(validatedData.id);
+      const success = todoService.deleteTodo(validatedData.id, username);
       
       if (!success) {
         throw new Error(`Failed to delete todo with ID ${id}`);
@@ -327,12 +358,13 @@ server.tool(
   "search-todos-by-title",
   "Search todos by title (case insensitive partial match)",
   {
+    username: z.string().min(1, "Username is required"),
     title: z.string().min(1, "Search term is required"),
   },
-  async ({ title }) => {
+  async ({ username, title }) => {
     const result = await safeExecute(() => {
       const validatedData = SearchTodosByTitleSchema.parse({ title });
-      const todos = todoService.searchByTitle(validatedData.title);
+      const todos = todoService.searchByTitle(validatedData.title, username);
       return formatTodoList(todos);
     }, "Failed to search todos");
 
@@ -361,12 +393,13 @@ server.tool(
   "search-todos-by-date",
   "Search todos by creation date (format: YYYY-MM-DD)",
   {
+    username: z.string().min(1, "Username is required"),
     date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be in YYYY-MM-DD format"),
   },
-  async ({ date }) => {
+  async ({ username, date }) => {
     const result = await safeExecute(() => {
       const validatedData = SearchTodosByDateSchema.parse({ date });
-      const todos = todoService.searchByDate(validatedData.date);
+      const todos = todoService.searchByDate(validatedData.date, username);
       return formatTodoList(todos);
     }, "Failed to search todos by date");
 
@@ -379,67 +412,7 @@ server.tool(
 );
 
 /**
- * Tool 9: List active todos
- * 
- * This tool:
- * 1. Retrieves all non-completed todos
- * 2. Returns a formatted list of active todos
- * 
- * WHY SEPARATE FROM LIST ALL?
- * - Active todos are typically what users most often want to see
- * - Reduces noise by filtering out completed items
- * - Provides a clearer view of outstanding work
- */
-server.tool(
-  "list-active-todos",
-  "List all non-completed todos",
-  {},
-  async () => {
-    const result = await safeExecute(() => {
-      const todos = todoService.getActiveTodos();
-      return formatTodoList(todos);
-    }, "Failed to list active todos");
-
-    if (result instanceof Error) {
-      return createErrorResponse(result.message);
-    }
-
-    return createSuccessResponse(result);
-  }
-);
-
-/**
- * Tool 10: Summarize active todos
- * 
- * This tool:
- * 1. Generates a summary of all active todos
- * 2. Returns a formatted markdown summary
- * 
- * WHY HAVE A SUMMARY?
- * - Provides a quick overview without details
- * - Perfect for a quick status check
- * - Easier to read than a full list when there are many todos
- * - Particularly useful for LLM interfaces where conciseness matters
- */
-server.tool(
-  "summarize-active-todos",
-  "Generate a summary of all active (non-completed) todos",
-  {},
-  async () => {
-    const result = await safeExecute(() => {
-      return todoService.summarizeActiveTodos();
-    }, "Failed to summarize active todos");
-
-    if (result instanceof Error) {
-      return createErrorResponse(result.message);
-    }
-
-    return createSuccessResponse(result);
-  }
-);
-
-/**
- * Tool 11: Search todos by priority
+ * Tool 9: Search todos by priority
  * 
  * This tool:
  * 1. Validates the search term
@@ -455,12 +428,13 @@ server.tool(
   "search-todos-by-priority",
   "Search todos by priority (case insensitive partial match)",
   {
+    username: z.string().min(1, "Username is required"),
     priority: z.nativeEnum(Priority, {"message": "Invalid priority value"}),
   },
-  async ({ priority }) => {
+  async ({ username, priority }) => {
     const result = await safeExecute(() => {
       const validatedData = SearchByPrioritySchema.parse({ priority });
-      const todos = todoService.searchByPriority(validatedData.priority);
+      const todos = todoService.searchByPriority(validatedData.priority, username);
       return formatTodoList(todos);
     }, "Failed to search todos");
 
@@ -502,11 +476,14 @@ server.tool(
  */
 server.tool(
   "list-tags",
-  "List all tags",
-  {},
-  async () => {
+  "List all tags with optional pagination",
+  {
+    limit: z.number().optional(),
+    offset: z.number().optional()
+  },
+  async ({ limit, offset }) => {
     const result = await safeExecute(() => {
-      const tags = tagService.getAllTags();
+      const tags = tagService.getAllTags(limit, offset);
       return formatTagList(tags);
     }, "Failed to list tags");
 
@@ -519,51 +496,35 @@ server.tool(
 );
 
 /**
- * Tool 14: Get a specific tag by ID
+ * Tool 14: Get tag(s) by ID(s)
+ *
+ * This tool retrieves one or more tags by their IDs.
+ * Accepts either a single tag ID or an array of tag IDs for batch operations.
  */
 server.tool(
   "get-tag",
-  "Get a specific tag by ID",
+  "Get one or more tags by ID(s) - accepts single ID or array of IDs for batch operations",
   {
-    id: z.string().regex(/tag-[\d]+/, "Invalid tag ID"),
+    id: z.union([
+      z.string().regex(/tag-[\d]+/, "Invalid tag ID"),
+      z.array(z.string().regex(/tag-[\d]+/, "Invalid tag ID")).min(1, "At least one tag ID is required")
+    ])
   },
   async ({ id }) => {
     const result = await safeExecute(() => {
-      const tag = tagService.getTag(id);
-      if (!tag) {
-        throw new Error(`Tag with ID ${id} not found`);
-      }
-      return formatTag(tag);
-    }, "Failed to get tag");
-
-    if (result instanceof Error) {
-      return createErrorResponse(result.message);
-    }
-
-    return createSuccessResponse(result);
-  }
-);
-
-/**
- * Tool 15: Get multiple tags by IDs (batch operation)
- *
- * This tool retrieves multiple tags in a single request for efficiency.
- * Useful when you need to get details for multiple tags at once.
- */
-server.tool(
-  "get-tags",
-  "Get multiple tags by IDs (batch operation for efficiency)",
-  {
-    ids: z.array(z.string().regex(/tag-[\d]+/, "Invalid tag ID")).min(1, "At least one tag ID is required"),
-  },
-  async ({ ids }) => {
-    const result = await safeExecute(() => {
+      const ids = Array.isArray(id) ? id : [id];
       const tags = tagService.getTags(ids);
+      
       if (tags.length === 0) {
-        return "No tags found with the provided IDs";
+        return "No tags found with the provided ID(s)";
+      }
+      
+      // Return single tag format for single ID request, list for multiple
+      if (ids.length === 1 && tags.length === 1) {
+        return formatTag(tags[0]);
       }
       return formatTagList(tags);
-    }, "Failed to get tags");
+    }, "Failed to get tag(s)");
 
     if (result instanceof Error) {
       return createErrorResponse(result.message);
@@ -671,13 +632,14 @@ server.tool(
   "add-tag-to-todo",
   "Add a tag to a todo item",
   {
+    username: z.string().min(1, "Username is required"),
     todoId: z.string().regex(/task-[\d]+/, "Invalid todo ID"),
     tagId: z.string().regex(/tag-[\d]+/, "Invalid tag ID"),
   },
-  async ({ todoId, tagId }) => {
+  async ({ username, todoId, tagId }) => {
     const result = await safeExecute(() => {
-      // Verify todo exists
-      const todo = todoService.getTodo(todoId);
+      // Verify todo exists and belongs to user
+      const todo = todoService.getTodo(todoId, username);
       if (!todo) {
         throw new Error(`Todo with ID ${todoId} not found`);
       }
@@ -711,13 +673,14 @@ server.tool(
   "remove-tag-from-todo",
   "Remove a tag from a todo item",
   {
+    username: z.string().min(1, "Username is required"),
     todoId: z.string().regex(/task-[\d]+/, "Invalid todo ID"),
     tagId: z.string().regex(/tag-[\d]+/, "Invalid tag ID"),
   },
-  async ({ todoId, tagId }) => {
+  async ({ username, todoId, tagId }) => {
     const result = await safeExecute(() => {
-      // Verify todo exists
-      const todo = todoService.getTodo(todoId);
+      // Verify todo exists and belongs to user
+      const todo = todoService.getTodo(todoId, username);
       if (!todo) {
         throw new Error(`Todo with ID ${todoId} not found`);
       }
@@ -730,7 +693,7 @@ server.tool(
 
       const removed = tagService.removeTagFromTodo(todoId, tagId);
       if (!removed) {
-        throw new Error(`Tag "${tag.name}" is not assigned to this todo`);
+        return `Tag "${tag.name}" is not assigned to this todo`;
       }
 
       return `Tag "${tag.name}" removed from todo "${todo.title}"`;
@@ -751,12 +714,13 @@ server.tool(
   "get-todo-tags",
   "Get all tags associated with a todo",
   {
+    username: z.string().min(1, "Username is required"),
     todoId: z.string().regex(/task-[\d]+/, "Invalid todo ID"),
   },
-  async ({ todoId }) => {
+  async ({ username, todoId }) => {
     const result = await safeExecute(() => {
-      // Verify todo exists
-      const todo = todoService.getTodo(todoId);
+      // Verify todo exists and belongs to user
+      const todo = todoService.getTodo(todoId, username);
       if (!todo) {
         throw new Error(`Todo with ID ${todoId} not found`);
       }
@@ -781,9 +745,10 @@ server.tool(
   "search-todos-by-tag",
   "Find all todos with a specific tag",
   {
+    username: z.string().min(1, "Username is required"),
     tagId: z.string().regex(/tag-[\d]+/, "Invalid tag ID"),
   },
-  async ({ tagId }) => {
+  async ({ username, tagId }) => {
     const result = await safeExecute(() => {
       // Verify tag exists
       const tag = tagService.getTag(tagId);
@@ -796,9 +761,9 @@ server.tool(
         return `No todos found with tag "${tag.name}"`;
       }
 
-      // Get the full todo objects
+      // Get the full todo objects, filtering by username
       const todos = todoIds
-        .map(id => todoService.getTodo(id))
+        .map(id => todoService.getTodo(id, username))
         .filter((todo): todo is any => todo !== undefined);
 
       return `Todos with tag "${tag.name}":\n\n${formatTodoList(todos)}`;
@@ -822,23 +787,24 @@ server.tool(
   "add-blocker-dependency",
   "Mark a todo as blocked by another todo",
   {
+    username: z.string().min(1, "Username is required"),
     blockedTodoId: z.string().regex(/task-[\d]+/, "Invalid blocked todo ID"),
     blockerTodoId: z.string().regex(/task-[\d]+/, "Invalid blocker todo ID"),
   },
-  async ({ blockedTodoId, blockerTodoId }) => {
+  async ({ username, blockedTodoId, blockerTodoId }) => {
     const result = await safeExecute(() => {
       // Verify both todos exist
-      const blockedTodo = todoService.getTodo(blockedTodoId);
+      const blockedTodo = todoService.getTodo(blockedTodoId, username);
       if (!blockedTodo) {
         throw new Error(`Todo with ID ${blockedTodoId} not found`);
       }
 
-      const blockerTodo = todoService.getTodo(blockerTodoId);
+      const blockerTodo = todoService.getTodo(blockerTodoId, username);
       if (!blockerTodo) {
         throw new Error(`Todo with ID ${blockerTodoId} not found`);
       }
 
-      const added = todoService.addBlockerDependency(blockedTodoId, blockerTodoId);
+      const added = todoService.addBlockerDependency(blockedTodoId, blockerTodoId, username);
       if (!added) {
         return `"${blockedTodo.title}" is already blocked by "${blockerTodo.title}"`;
       }
@@ -861,23 +827,24 @@ server.tool(
   "remove-blocker-dependency",
   "Remove a blocker dependency from a todo",
   {
+    username: z.string().min(1, "Username is required"),
     blockedTodoId: z.string().regex(/task-[\d]+/, "Invalid blocked todo ID"),
     blockerTodoId: z.string().regex(/task-[\d]+/, "Invalid blocker todo ID"),
   },
-  async ({ blockedTodoId, blockerTodoId }) => {
+  async ({ username, blockedTodoId, blockerTodoId }) => {
     const result = await safeExecute(() => {
       // Verify both todos exist
-      const blockedTodo = todoService.getTodo(blockedTodoId);
+      const blockedTodo = todoService.getTodo(blockedTodoId, username);
       if (!blockedTodo) {
         throw new Error(`Todo with ID ${blockedTodoId} not found`);
       }
 
-      const blockerTodo = todoService.getTodo(blockerTodoId);
+      const blockerTodo = todoService.getTodo(blockerTodoId, username);
       if (!blockerTodo) {
         throw new Error(`Todo with ID ${blockerTodoId} not found`);
       }
 
-      const removed = todoService.removeBlockerDependency(blockedTodoId, blockerTodoId);
+      const removed = todoService.removeBlockerDependency(blockedTodoId, blockerTodoId, username);
       if (!removed) {
         throw new Error(`"${blockedTodo.title}" is not blocked by "${blockerTodo.title}"`);
       }
@@ -902,17 +869,18 @@ server.tool(
   "get-blockers",
   "Get all todos that are blocking a specific todo",
   {
+    username: z.string().min(1, "Username is required"),
     todoId: z.string().regex(/task-[\d]+/, "Invalid todo ID"),
   },
-  async ({ todoId }) => {
+  async ({ username, todoId }) => {
     const result = await safeExecute(() => {
       // Verify todo exists
-      const todo = todoService.getTodo(todoId);
+      const todo = todoService.getTodo(todoId, username);
       if (!todo) {
         throw new Error(`Todo with ID ${todoId} not found`);
       }
 
-      const blockers = todoService.getBlockersForTodo(todoId);
+      const blockers = todoService.getBlockersForTodo(todoId, username);
       if (blockers.length === 0) {
         return `"${todo.title}" is not blocked by any todos`;
       }
@@ -937,24 +905,25 @@ server.tool(
   "get-blocked-todos",
   "Get all todos that are blocked by a specific todo",
   {
+    username: z.string().min(1, "Username is required"),
     todoId: z.string().regex(/task-[\d]+/, "Invalid todo ID"),
   },
-  async ({ todoId }) => {
+  async ({ username, todoId }) => {
     const result = await safeExecute(() => {
       // Verify todo exists
-      const todo = todoService.getTodo(todoId);
+      const todo = todoService.getTodo(todoId, username);
       if (!todo) {
         throw new Error(`Todo with ID ${todoId} not found`);
       }
 
-      const blockedIds = todoService.getTodosBlockedBy(todoId);
+      const blockedIds = todoService.getTodosBlockedBy(todoId, username);
       if (blockedIds.length === 0) {
         return `"${todo.title}" is not blocking any todos`;
       }
 
       // Get the full todo objects
       const blockedTodos = blockedIds
-        .map(id => todoService.getTodo(id))
+        .map(id => todoService.getTodo(id, username))
         .filter((todo): todo is any => todo !== undefined);
 
       return `Todos blocked by "${todo.title}":\n\n${formatTodoList(blockedTodos)}`;
@@ -965,6 +934,320 @@ server.tool(
     }
 
     return createSuccessResponse(result);
+  }
+);
+
+/**
+ * Tool 27: List all users
+ *
+ * Returns a list of all registered users in the system.
+ */
+server.tool(
+  "list-users",
+  "List all registered users",
+  {},
+  async () => {
+    const result = await safeExecute(() => {
+      const users = userService.getAllUsers();
+      if (users.length === 0) {
+        return "No users found.";
+      }
+      
+      const userList = users.map(user => `- ${user.username} (created: ${new Date(user.createdAt).toLocaleDateString()})`).join('\n');
+      return `# Registered Users\n\nThere are ${users.length} users:\n\n${userList}`;
+    }, "Failed to list users");
+
+    if (result instanceof Error) {
+      return createErrorResponse(result.message);
+    }
+
+    return createSuccessResponse(result);
+  }
+);
+
+/**
+ * Tool 28: Create a new project
+ */
+server.tool(
+  "create-project",
+  "Create a new project for organizing todos",
+  {
+    username: z.string().min(1, "Username is required"),
+    name: z.string().min(1, "Project name is required").max(100, "Project name must be less than 100 characters"),
+    description: z.string().min(1, "Project description is required").max(1000, "Project description must be less than 1000 characters"),
+  },
+  async ({ username, name, description }) => {
+    const result = await safeExecute(() => {
+      const validatedData = CreateProjectSchema.parse({ username, name, description });
+      const newProject = projectService.createProject(validatedData);
+      return formatProject(newProject);
+    }, "Failed to create project");
+
+    if (result instanceof Error) {
+      return createErrorResponse(result.message);
+    }
+
+    return createSuccessResponse(`✅ Project Created:\n\n${result}`);
+  }
+);
+
+/**
+ * Tool 29: List all projects
+ */
+server.tool(
+  "list-projects",
+  "List all projects for a user with optional pagination",
+  {
+    username: z.string().min(1, "Username is required"),
+    limit: z.number().optional(),
+    offset: z.number().optional()
+  },
+  async ({ username, limit, offset }) => {
+    const result = await safeExecute(() => {
+      const projects = projectService.getAllProjects(username, limit, offset);
+      return formatProjectList(projects);
+    }, "Failed to list projects");
+
+    if (result instanceof Error) {
+      return createErrorResponse(result.message);
+    }
+
+    return createSuccessResponse(result);
+  }
+);
+
+/**
+ * Tool 30: Get a specific project by ID
+ */
+server.tool(
+  "get-project",
+  "Get a specific project by ID",
+  {
+    username: z.string().min(1, "Username is required"),
+    id: z.string().regex(/project-[\d]+/, "Invalid project ID"),
+  },
+  async ({ username, id }) => {
+    const result = await safeExecute(() => {
+      const project = projectService.getProject(id, username);
+      if (!project) {
+        throw new Error(`Project with ID ${id} not found`);
+      }
+      return formatProject(project);
+    }, "Failed to get project");
+
+    if (result instanceof Error) {
+      return createErrorResponse(result.message);
+    }
+
+    return createSuccessResponse(result);
+  }
+);
+
+/**
+ * Tool 31: Update a project
+ */
+server.tool(
+  "update-project",
+  "Update a project name or description",
+  {
+    username: z.string().min(1, "Username is required"),
+    id: z.string().regex(/project-[\d]+/, "Invalid project ID"),
+    name: z.string().min(1, "Project name is required").max(100, "Project name must be less than 100 characters").optional(),
+    description: z.string().min(1, "Project description is required").max(1000, "Project description must be less than 1000 characters").optional(),
+  },
+  async ({ username, id, name, description }) => {
+    const result = await safeExecute(() => {
+      const validatedData = UpdateProjectSchema.parse({ id, name, description });
+
+      // Ensure at least one field is being updated
+      if (!name && !description) {
+        throw new Error("At least one field (name or description) must be provided");
+      }
+
+      const updatedProject = projectService.updateProject(validatedData, username);
+      if (!updatedProject) {
+        throw new Error(`Project with ID ${id} not found`);
+      }
+
+      return formatProject(updatedProject);
+    }, "Failed to update project");
+
+    if (result instanceof Error) {
+      return createErrorResponse(result.message);
+    }
+
+    return createSuccessResponse(`✅ Project Updated:\n\n${result}`);
+  }
+);
+
+/**
+ * Tool 32: Delete a project
+ */
+server.tool(
+  "delete-project",
+  "Delete a project",
+  {
+    username: z.string().min(1, "Username is required"),
+    id: z.string().regex(/project-[\d]+/, "Invalid project ID"),
+  },
+  async ({ username, id }) => {
+    const result = await safeExecute(() => {
+      const project = projectService.getProject(id, username);
+      if (!project) {
+        throw new Error(`Project with ID ${id} not found`);
+      }
+
+      const success = projectService.deleteProject(id, username);
+      if (!success) {
+        throw new Error(`Failed to delete project with ID ${id}`);
+      }
+
+      return project.name;
+    }, "Failed to delete project");
+
+    if (result instanceof Error) {
+      return createErrorResponse(result.message);
+    }
+
+    return createSuccessResponse(`✅ Project Deleted: "${result}"`);
+  }
+);
+
+/**
+ * Tool 33: Search projects by name
+ */
+server.tool(
+  "search-projects-by-name",
+  "Search projects by name (case insensitive partial match)",
+  {
+    username: z.string().min(1, "Username is required"),
+    name: z.string().min(1, "Search term is required"),
+  },
+  async ({ username, name }) => {
+    const result = await safeExecute(() => {
+      const validatedData = SearchProjectsByNameSchema.parse({ name });
+      const projects = projectService.searchProjectsByName(validatedData.name, username);
+      return formatProjectList(projects);
+    }, "Failed to search projects");
+
+    if (result instanceof Error) {
+      return createErrorResponse(result.message);
+    }
+
+    return createSuccessResponse(result);
+  }
+);
+
+/**
+ * Tool 34: Get all todos in a project
+ */
+server.tool(
+  "get-project-todos",
+  "Get all todos in a project",
+  {
+    username: z.string().min(1, "Username is required"),
+    projectId: z.string().regex(/project-[\d]+/, "Invalid project ID"),
+  },
+  async ({ username, projectId }) => {
+    const result = await safeExecute(() => {
+      const project = projectService.getProject(projectId, username);
+      if (!project) {
+        throw new Error(`Project with ID ${projectId} not found`);
+      }
+
+      const todoIds = projectService.getTodosInProject(projectId, username);
+      if (todoIds.length === 0) {
+        return `No todos found in project "${project.name}"`;
+      }
+
+      // Get the full todo objects
+      const todos = todoIds
+        .map(id => todoService.getTodo(id, username))
+        .filter((todo): todo is any => todo !== undefined);
+
+      return `Todos in project "${project.name}":\n\n${formatTodoList(todos)}`;
+    }, "Failed to get project todos");
+
+    if (result instanceof Error) {
+      return createErrorResponse(result.message);
+    }
+
+    return createSuccessResponse(result);
+  }
+);
+
+/**
+ * Tool 35: Assign a todo to a project
+ */
+server.tool(
+  "assign-todo-to-project",
+  "Assign a todo to a project",
+  {
+    username: z.string().min(1, "Username is required"),
+    todoId: z.string().regex(/task-[\d]+/, "Invalid todo ID"),
+    projectId: z.string().regex(/project-[\d]+/, "Invalid project ID"),
+  },
+  async ({ username, todoId, projectId }) => {
+    const result = await safeExecute(() => {
+      // Verify todo exists
+      const todo = todoService.getTodo(todoId, username);
+      if (!todo) {
+        throw new Error(`Todo with ID ${todoId} not found`);
+      }
+
+      // Verify project exists
+      const project = projectService.getProject(projectId, username);
+      if (!project) {
+        throw new Error(`Project with ID ${projectId} not found`);
+      }
+
+      const assigned = todoService.assignTodoToProject(todoId, projectId, username);
+      if (!assigned) {
+        throw new Error(`Failed to assign todo to project`);
+      }
+
+      return `Todo "${todo.title}" assigned to project "${project.name}"`;
+    }, "Failed to assign todo to project");
+
+    if (result instanceof Error) {
+      return createErrorResponse(result.message);
+    }
+
+    return createSuccessResponse(`✅ ${result}`);
+  }
+);
+
+/**
+ * Tool 36: Remove a todo from its project
+ */
+server.tool(
+  "remove-todo-from-project",
+  "Remove a todo from its project",
+  {
+    username: z.string().min(1, "Username is required"),
+    todoId: z.string().regex(/task-[\d]+/, "Invalid todo ID"),
+  },
+  async ({ username, todoId }) => {
+    const result = await safeExecute(() => {
+      // Verify todo exists
+      const todo = todoService.getTodo(todoId, username);
+      if (!todo) {
+        throw new Error(`Todo with ID ${todoId} not found`);
+      }
+
+      const removed = todoService.removeTodoFromProject(todoId, username);
+      if (!removed) {
+        throw new Error(`Failed to remove todo from project`);
+      }
+
+      return `Todo "${todo.title}" removed from project`;
+    }, "Failed to remove todo from project");
+
+    if (result instanceof Error) {
+      return createErrorResponse(result.message);
+    }
+
+    return createSuccessResponse(`✅ ${result}`);
   }
 );
 
