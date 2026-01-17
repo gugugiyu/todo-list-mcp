@@ -130,7 +130,7 @@ Each project contains:
 
 ```bash
 # Clone the repository
-git clone https://github.com/RegiByte/todo-list-mcp.git
+git clone https://github.com/gugugiyu/todo-list-mcp.git
 cd todo-list-mcp
 
 # Install dependencies
