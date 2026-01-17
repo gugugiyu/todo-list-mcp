@@ -13,6 +13,7 @@
  */
 import { Todo } from "../models/Todo.js";
 import { Tag } from "../models/Tag.js";
+import { Project } from "../models/Project.js";
 
 /**
  * Format a todo item to a readable string representation
@@ -43,6 +44,7 @@ export function formatTodo(todo: Todo): string {
 
 ### Metadata
 ID: ${todo.id}
+Project: ${todo.projectName}
 Priority: ${todo.priority}
 Created: ${new Date(todo.createdAt).toLocaleString()}
 Updated: ${new Date(todo.updatedAt).toLocaleString()}${blockedBySection}${tagsSection}
@@ -159,4 +161,58 @@ export function formatTagNames(tags: Tag[]): string {
     return "(no tags)";
   }
   return tags.map(tag => tag.name).join(", ");
+}
+
+/**
+ * Format a project to a readable string representation
+ *
+ * @param project The Project object to format
+ * @returns A markdown-formatted string representation
+ */
+export function formatProject(project: Project): string {
+  return `
+## ${project.name}
+
+ID: ${project.id}
+Description: ${project.description}
+Created: ${new Date(project.createdAt).toLocaleString()}
+Updated: ${new Date(project.updatedAt).toLocaleString()}
+  `.trim();
+}
+
+/**
+ * Format a list of projects to a readable string representation
+ *
+ * @param projects Array of Project objects to format
+ * @returns A markdown-formatted string with complete list
+ */
+export function formatProjectList(projects: Project[]): string {
+  if (projects.length === 0) {
+    return "No projects found.";
+  }
+  
+  const projectItems = projects.map(formatProject).join('\n\n---\n\n');
+  return `# Projects (${projects.length} total)\n\n${projectItems}`;
+}
+
+/**
+ * Convert ISO timestamp to relative time string
+ * 
+ * @param isoString ISO timestamp string
+ * @returns Human-readable relative time (e.g., "NOW", "5 min ago", "2 hours ago")
+ */
+export function formatRelativeTime(isoString: string): string {
+  const now = new Date(Date.now());
+  const date = new Date(isoString);
+  const diffMs = now.getTime() - date.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  
+  if (diffMins < 10) return "NOW";
+  if (diffMins < 60) return `${diffMins} min ago`;
+  
+  const diffHours = Math.floor(diffMins / 60);
+  if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
+  
+  const diffDays = Math.floor(diffHours / 24);
+  return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
 }
