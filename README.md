@@ -39,13 +39,13 @@ This MCP server exposes the following tools:
 8. `search-todos-by-title`: Search todos by title (case-insensitive partial match, requires username)
 9. `search-todos-by-date`: Search todos by creation date (format: YYYY-MM-DD, requires username)
 10. `search-todos-by-priority`: Search todos by priority level (requires username)
-~~11. `list-active-todos`: List all non-completed todos for a user (requires username)~~ **(merged with list-todos)**
-~~12. `summarize-active-todos`: Generate a summary of all active (non-completed) todos (requires username)~~ **(merged with list-todos)**
+11. ~~`list-active-todos`: List all non-completed todos for a user (requires username)~~ **(merged with list-todos)**
+12. ~~`summarize-active-todos`: Generate a summary of all active (non-completed) todos (requires username)~~ **(merged with list-todos)**
 
 ### Tag Management
 13. `create-tag`: Create a new tag with optional color (validates if tag already exists)
 14. `list-tags`: List all available tags (shared across all users)
-~~15. `get-tag`: Get a specific tag by ID~~ (batching is by default)
+15. ~~`get-tag`: Get a specific tag by ID~~ (batching is by default)
 16. `get-tags`: Get multiple tags by IDs (batch operation for efficiency)
 17. `update-tag`: Update a tag's name or color
 18. `delete-tag`: Delete a tag (removes from all todos)
