@@ -1,12 +1,6 @@
 # Todo List MCP Server
 
-A Model Context Protocol (MCP) server that provides a comprehensive API for managing todo items.
-
-<a href="https://glama.ai/mcp/servers/kh39rjpplx">
-  <img width="380" height="200" src="https://glama.ai/mcp/servers/kh39rjpplx/badge" alt="Todo List Server MCP server" />
-</a>
-
-> **📚 Learning Resource**: This project is designed as an educational example of MCP implementation. See [GUIDE.md](GUIDE.md) for a comprehensive explanation of how the project works and why things are implemented the way they are.
+A Model Context Protocol (MCP) server that provides a comprehensive API for managing todo items. This is the fork that expands on lots of features. Focusing mainly on more efficient context management while still maintaining the required features of a task management platform.
 
 ## Features
 
