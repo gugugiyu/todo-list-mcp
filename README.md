@@ -185,22 +185,15 @@ When using with Claude for Desktop or Cursor, you can try:
 - "Create a project 'Home Renovation' for user 'john-doe' with description 'Renovate the kitchen'"
 - "Assign todo 'task-1' to project 'Home Renovation'"
 
-## Database Migration
+## Database
 
-The project includes a migration script for upgrading the database schema:
+This project uses **TypeORM** as the Object-Relational Mapping (ORM) layer with **SQLite** as the database. TypeORM provides a clean, type-safe way to interact with the database using TypeScript decorators and entity classes.
 
-```bash
-# Check migration status
-npm run migrate:status
-
-# Migrate database to v2 (adds projects and tag limit)
-npm run migrate
-
-# Rollback database to v1
-npm run migrate:rollback
-```
-
-The migration script automatically creates a backup before any changes and supports rollback functionality.
+### Key Features:
+- **Type-safe queries**: All database operations are type-safe through TypeScript
+- **Entity-based schema**: Database tables are defined using entity classes with decorators
+- **Relationship management**: TypeORM handles complex relationships (one-to-many, many-to-many) automatically
+- **Automatic schema synchronization**: Database schema is automatically synchronized with entity definitions on application startup
 
 ## Project Structure
 
@@ -208,11 +201,12 @@ This project follows a clear separation of concerns to make the code easy to und
 
 ```
 src/
+├── entities/     # TypeORM entity definitions for database tables
 ├── models/       # Data structures and validation schemas
 ├── services/     # Business logic and database operations
 ├── utils/        # Helper functions and formatters
-├── scripts/       # Migration scripts
 ├── config.ts     # Configuration settings
+├── data-source.ts # TypeORM DataSource configuration
 ├── client.ts     # Test client for local testing
 └── index.ts      # Main entry point with MCP tool definitions
 ```
@@ -239,6 +233,20 @@ npm run build
 ```bash
 npm run dev
 ```
+
+### Running Tests
+
+The project includes comprehensive unit tests using Vitest:
+
+```bash
+# Run all unit tests
+npm run test:unit
+
+# Run tests with coverage
+npm run test:coverage
+```
+
+All tests use a separate test database to avoid affecting production data.
 
 ## License
 
