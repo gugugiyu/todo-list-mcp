@@ -1,202 +1,106 @@
 /**
  * DatabaseService.ts
- * 
- * This file implements a lightweight SQLite database service for the Todo application.
- * 
- * WHY SQLITE?
- * - SQLite is perfect for small to medium applications like this one
- * - Requires no separate database server (file-based)
- * - ACID compliant and reliable
- * - Minimal configuration required
- * - Easy to install with minimal dependencies
+ *
+ * This file implements a database service for the Todo application using TypeORM.
+ *
+ * WHY TYPEORM?
+ * - TypeORM is a popular ORM for TypeScript/Node.js
+ * - Provides type-safe database operations
+ * - Supports migrations, relationships, and complex queries
+ * - Works with SQLite and other databases
  */
-import Database from 'better-sqlite3';
-import { config, ensureDbFolder } from '../config.js';
+import { AppDataSource } from '../data-source.js';
+import { DataSource } from 'typeorm';
 
 /**
  * DatabaseService Class
- * 
- * This service manages the SQLite database connection and schema.
+ *
+ * This service manages the TypeORM DataSource and provides access to repositories.
  * It follows the singleton pattern to ensure only one database connection exists.
- * 
+ *
  * WHY SINGLETON PATTERN?
  * - Prevents multiple database connections which could lead to conflicts
  * - Provides a central access point to the database throughout the application
  * - Makes it easier to manage connection lifecycle (open/close)
  */
 class DatabaseService {
-  private db: Database.Database;
+  private dataSource: DataSource;
 
-  constructor() {
-    // Ensure the database folder exists before trying to create the database
-    ensureDbFolder();
-    
-    // Initialize the database with the configured path
-    this.db = new Database(config.db.path);
-    
-    /**
-     * Set pragmas for performance and safety:
-     * - WAL (Write-Ahead Logging): Improves concurrent access performance
-     * - foreign_keys: Ensures referential integrity (useful for future expansion)
-     */
-    this.db.pragma('journal_mode = WAL');
-    this.db.pragma('foreign_keys = ON');
-    
-    // Initialize the database schema when service is created
-    this.initSchema();
-    // Run migrations for existing databases
-    this.migrate();
+  constructor(dataSource?: DataSource) {
+    // Allow dependency injection for testing
+    // If no DataSource is provided, use the production AppDataSource
+    this.dataSource = dataSource || AppDataSource;
   }
 
   /**
-   * Initialize the database schema
+   * Get the DataSource instance
    *
-   * This creates the users, projects, todos, tags, todo_tags, and todo_dependencies tables if they don't already exist.
-   * The schema design incorporates:
-   * - TEXT primary key for UUID compatibility
-   * - NULL completedAt to represent incomplete todos
-   * - Timestamp fields for tracking creation and updates
-   * - Junction table (todo_tags) for N-N relationship between todos and tags
-   * - Junction table (todo_dependencies) for task blocking relationships
-   * - Projects table for organizing related todos
-   */
-  private initSchema(): void {
-    // Create users table if it doesn't exist
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS users (
-        username TEXT PRIMARY KEY,
-        createdAt TEXT NOT NULL
-      )
-    `);
-
-    // Create todos table if it doesn't exist
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS todos (
-        id TEXT PRIMARY KEY,
-        username TEXT NOT NULL,
-        title TEXT NOT NULL,
-        priority TEXT NOT NULL,
-        description TEXT NOT NULL,
-        completedAt TEXT NULL, -- ISO timestamp, NULL if not completed
-        createdAt TEXT NOT NULL,
-        updatedAt TEXT NOT NULL,
-        FOREIGN KEY (username) REFERENCES users(username) ON DELETE CASCADE
-      )
-    `);
-
-    // Create projects table if it doesn't exist
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS projects (
-        id TEXT PRIMARY KEY,
-        username TEXT NOT NULL,
-        name TEXT NOT NULL,
-        description TEXT NOT NULL,
-        createdAt TEXT NOT NULL,
-        updatedAt TEXT NOT NULL,
-        FOREIGN KEY (username) REFERENCES users(username) ON DELETE CASCADE
-      )
-    `);
-
-    // Create tags table if it doesn't exist
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS tags (
-        id TEXT PRIMARY KEY,
-        name TEXT NOT NULL UNIQUE,
-        color TEXT NULL,
-        createdAt TEXT NOT NULL,
-        updatedAt TEXT NOT NULL
-      )
-    `);
-
-    // Create junction table for N-N relationship between todos and tags
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS todo_tags (
-        todo_id TEXT NOT NULL,
-        tag_id TEXT NOT NULL,
-        createdAt TEXT NOT NULL,
-        PRIMARY KEY (todo_id, tag_id),
-        FOREIGN KEY (todo_id) REFERENCES todos(id) ON DELETE CASCADE,
-        FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE
-      )
-    `);
-
-    // Create junction table for task dependencies (which tasks block which)
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS todo_dependencies (
-        blocked_todo_id TEXT NOT NULL,
-        blocker_todo_id TEXT NOT NULL,
-        createdAt TEXT NOT NULL,
-        PRIMARY KEY (blocked_todo_id, blocker_todo_id),
-        FOREIGN KEY (blocked_todo_id) REFERENCES todos(id) ON DELETE CASCADE,
-        FOREIGN KEY (blocker_todo_id) REFERENCES todos(id) ON DELETE CASCADE
-      )
-    `);
-  }
-
-  /**
-   * Migrate existing database to new schema
+   * This allows other services to access the DataSource for operations.
    *
-   * This handles incremental migrations for databases created before
-   * certain features were added.
+   * @returns The TypeORM DataSource instance
    */
-  private migrate(): void {
-    try {
-      const tableInfo = this.db.pragma('table_info(todos)') as any[];
-      
-      // Migration 1: Add username column (for authentication system)
-      const hasUsernameColumn = tableInfo.some((col: any) => col.name === 'username');
-      
-      if (!hasUsernameColumn) {
-        console.error('Migrating database: Adding username column to todos table...');
-        
-        // Add the username column with a default value for existing records
-        this.db.exec(`
-          ALTER TABLE todos ADD COLUMN username TEXT NOT NULL DEFAULT 'default-user'
-        `);
-        
-        console.error('Database migration completed successfully');
-      }
-
-      // Migration 2: Add project_id column (for projects feature)
-      const hasProjectIdColumn = tableInfo.some((col: any) => col.name === 'project_id');
-      
-      if (!hasProjectIdColumn) {
-        console.error('Migrating database: Adding project_id column to todos table...');
-        
-        // Add the project_id column (nullable, as todos don't need to belong to a project)
-        this.db.exec(`
-          ALTER TABLE todos ADD COLUMN project_id TEXT NULL
-        `);
-        
-        console.error('Database migration completed successfully');
-      }
-    } catch (error) {
-      // If migration fails, log but don't crash
-      console.error('Database migration failed:', error);
-    }
+  getDataSource() {
+    return this.dataSource;
   }
 
   /**
-   * Get the database instance
-   * 
-   * This allows other services to access the database for operations.
-   * 
-   * @returns The SQLite database instance
+   * Get the User repository
+   *
+   * @returns The User repository
    */
-  getDb(): Database.Database {
-    return this.db;
+  getUserRepository() {
+    return this.dataSource.getRepository('User');
+  }
+
+  /**
+   * Get the Todo repository
+   *
+   * @returns The Todo repository
+   */
+  getTodoRepository() {
+    return this.dataSource.getRepository('Todo');
+  }
+
+  /**
+   * Get the Tag repository
+   *
+   * @returns The Tag repository
+   */
+  getTagRepository() {
+    return this.dataSource.getRepository('Tag');
+  }
+
+  /**
+   * Get the Project repository
+   *
+   * @returns The Project repository
+   */
+  getProjectRepository() {
+    return this.dataSource.getRepository('Project');
+  }
+
+  /**
+   * Get the TodoDependency repository
+   *
+   * @returns The TodoDependency repository
+   */
+  getTodoDependencyRepository() {
+    return this.dataSource.getRepository('TodoDependency');
   }
 
   /**
    * Close the database connection
-   * 
+   *
    * This should be called when shutting down the application to ensure
    * all data is properly saved and resources are released.
    */
-  close(): void {
-    this.db.close();
+  async close(): Promise<void> {
+    await this.dataSource.destroy();
   }
 }
 
+// Export the class for testing (allows creating fresh instances with custom DataSource)
+export { DatabaseService };
+
 // Create a singleton instance that will be used throughout the application
-export const databaseService = new DatabaseService(); 
+export const databaseService = new DatabaseService();

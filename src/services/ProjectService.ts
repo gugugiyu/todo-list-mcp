@@ -1,7 +1,7 @@
 /**
  * ProjectService.ts
  *
- * This service implements the core business logic for managing projects.
+ * This service implements the core business logic for managing projects using TypeORM.
  * It acts as an intermediary between the data model and the database,
  * handling all CRUD operations for projects and managing project-todo relationships.
  *
@@ -13,10 +13,10 @@
  */
 import { Project, createProject, CreateProjectSchema, UpdateProjectSchema } from '../models/Project.js';
 import { z } from 'zod';
-import Database from 'better-sqlite3';
-import { databaseService } from './DatabaseService.js';
+import { DatabaseService, databaseService } from './DatabaseService.js';
 import { IdMapService, EntityType, idMapService } from './IdMapService.js';
 import { UserService, userService } from './UserService.js';
+import { Like } from 'typeorm';
 
 /**
  * ProjectService Class
@@ -26,23 +26,15 @@ import { UserService, userService } from './UserService.js';
  * operations and business logic in one place.
  */
 class ProjectService {
-  private db: Database.Database;
   private idMap: IdMapService;
   private userSvc: UserService;
+  private dbService: DatabaseService;
 
-  constructor(db?: Database.Database, idMap?: IdMapService, userSvc?: UserService) {
+  constructor(idMap?: IdMapService, userSvc?: UserService, dbService?: DatabaseService) {
     // Allow dependency injection for testing
-    this.db = db || databaseService.getDb();
     this.idMap = idMap || idMapService;
     this.userSvc = userSvc || userService;
-  }
-
-  /**
-   * Get the database instance
-   * Useful for testing to verify database state
-   */
-  getDb(): Database.Database {
-    return this.db;
+    this.dbService = dbService || databaseService;
   }
 
   /**
@@ -60,6 +52,7 @@ class ProjectService {
   getUserService(): UserService {
     return this.userSvc;
   }
+
   /**
    * Create a new project
    *
@@ -72,34 +65,28 @@ class ProjectService {
    * @param data Validated input data (username, name, description)
    * @returns The newly created Project
    */
-  createProject(data: z.infer<typeof CreateProjectSchema>): Project {
+  async createProject(data: z.infer<typeof CreateProjectSchema>): Promise<Project> {
     // Validate input data
     const validatedData = CreateProjectSchema.parse(data);
 
     // Get or create the user (automatic registration)
-    const user = this.userSvc.getOrCreateUser(validatedData.username);
+    const user = await this.userSvc.getOrCreateUser(validatedData.username);
 
     // Use the factory function to create a Project with proper defaults
     const project = createProject({ ...validatedData, username: user.username });
 
-    // Get the database instance
-    const db = this.db;
+    const projectRepo = this.dbService.getProjectRepository();
 
-    // Prepare the SQL statement for inserting a new project
-    const stmt = db.prepare(`
-      INSERT INTO projects (id, username, name, description, createdAt, updatedAt)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `);
+    const newProject = projectRepo.create({
+      id: project.id,
+      username: project.username,
+      name: project.name,
+      description: project.description,
+      createdAt: project.createdAt,
+      updatedAt: project.updatedAt,
+    });
 
-    // Execute the statement with the project's data
-    stmt.run(
-      project.id,
-      project.username,
-      project.name,
-      project.description,
-      project.createdAt,
-      project.updatedAt
-    );
+    await projectRepo.save(newProject);
 
     // Register the human-readable ID mapping
     const humanReadableId = this.idMap.getHumanReadableId(project.id, EntityType.PROJECT);
@@ -122,28 +109,24 @@ class ProjectService {
    * @param username The username to verify ownership
    * @returns The Project if found, undefined otherwise
    */
-  getProject(id: string, username: string): Project | undefined {
-    const db = this.db;
-
-    // Use parameterized query to prevent SQL injection
-    const stmt = db.prepare('SELECT * FROM projects WHERE id = ?');
+  async getProject(id: string, username: string): Promise<Project | undefined> {
+    const projectRepo = this.dbService.getProjectRepository();
 
     const uuid = this.idMap.getUuid(id, EntityType.PROJECT);
     if (!uuid) return undefined;
 
-    const row = stmt.get(uuid) as any;
+    const project = await projectRepo.findOne({ where: { id: uuid } });
 
-    // Return undefined if no project was found
-    if (!row) return undefined;
+    if (!project) return undefined;
 
     // If username is provided, check if the project belongs to that user
-    const validatedUsername = this.userSvc.getOrCreateUser(username).username;
-    if (row.username !== validatedUsername) {
+    const validatedUsername = (await this.userSvc.getOrCreateUser(username)).username;
+    if (project.username !== validatedUsername) {
       return undefined; // User doesn't own this project
     }
 
     // Convert the database row to a Project object
-    return this.rowToProject(row);
+    return this.entityToProject(project);
   }
 
   /**
@@ -156,34 +139,29 @@ class ProjectService {
    * @param offset Number of projects to skip (default: 0)
    * @returns Array of Projects for the user
    */
-  getAllProjects(username: string, limit?: number, offset?: number): Project[] {
+  async getAllProjects(username: string, limit?: number, offset?: number): Promise<Project[]> {
     // Get or create the user (automatic registration)
-    const user = this.userSvc.getOrCreateUser(username);
+    const user = await this.userSvc.getOrCreateUser(username);
+ 
+    const projectRepo = this.dbService.getProjectRepository();
+ 
+    const findOptions: any = {
+      where: { username: user.username },
+      order: { name: 'ASC' }
+    };
 
-    const db = this.db;
-    let query = 'SELECT * FROM projects WHERE username = ? ORDER BY name';
-    const params: any[] = [user.username];
-    
     // Add pagination if specified
-    // SQLite requires LIMIT when using OFFSET, so we use a large number if limit is not specified
     if (limit !== undefined) {
-      query += ' LIMIT ?';
-      params.push(limit);
-    } else if (offset !== undefined) {
-      // If offset is provided without limit, use a very large limit
-      query += ' LIMIT ?';
-      params.push(2147483647); // Maximum SQLite integer
+      findOptions.take = limit;
     }
     if (offset !== undefined) {
-      query += ' OFFSET ?';
-      params.push(offset);
+      findOptions.skip = offset;
     }
-    
-    const stmt = db.prepare(query);
-    const rows = stmt.all(...params) as any[];
+
+    const projects = await projectRepo.find(findOptions);
 
     // Convert each database row to a Project object
-    return rows.map(row => this.rowToProject(row));
+    return projects.map(project => this.entityToProject(project));
   }
 
   /**
@@ -198,31 +176,27 @@ class ProjectService {
    * @param username The username to verify ownership
    * @returns The updated Project if found, undefined otherwise
    */
-  updateProject(data: z.infer<typeof UpdateProjectSchema>, username: string): Project | undefined {
+  async updateProject(data: z.infer<typeof UpdateProjectSchema>, username: string): Promise<Project | undefined> {
     // Validate input data
     const validatedData = UpdateProjectSchema.parse(data);
 
     // First check if the project exists and belongs to the user
-    const project = this.getProject(validatedData.id, username);
+    const project = await this.getProject(validatedData.id, username);
     if (!project) return undefined;
 
     // Create a timestamp for the update
     const updatedAt = new Date().toISOString();
 
-    const db = this.db;
-    const stmt = db.prepare(`
-      UPDATE projects
-      SET name = ?, description = ?, updatedAt = ?
-      WHERE id = ?
-    `);
-
-    // Update with new values or keep existing ones if not provided
+    const projectRepo = this.dbService.getProjectRepository();
     const uuid = this.idMap.getUuid(project.id, EntityType.PROJECT);
-    stmt.run(
-      validatedData.name ?? project.name,
-      validatedData.description ?? project.description,
-      updatedAt,
-      uuid
+
+    await projectRepo.update(
+      { id: uuid },
+      {
+        name: validatedData.name ?? project.name,
+        description: validatedData.description ?? project.description,
+        updatedAt,
+      }
     );
 
     // Return the updated project
@@ -239,29 +213,31 @@ class ProjectService {
    * @param username The username to verify ownership
    * @returns true if deleted, false if not found or not deleted
    */
-  deleteProject(id: string, username: string): boolean {
+  async deleteProject(id: string, username: string): Promise<boolean> {
     // First check if the project exists and belongs to the user
-    const project = this.getProject(id, username);
+    const project = await this.getProject(id, username);
     if (!project) return false;
 
-    const db = this.db;
-
-    // First, unassign all todos from this project
-    const unassignStmt = db.prepare('UPDATE todos SET project_id = NULL WHERE project_id = ?');
+    const projectRepo = this.dbService.getProjectRepository();
     const projectUuid = this.idMap.getUuid(id, EntityType.PROJECT);
     if (!projectUuid) return false;
-    unassignStmt.run(projectUuid);
+
+    // First, unassign all todos from this project
+    const todoRepo = this.dbService.getTodoRepository();
+    await todoRepo.update(
+      { projectId: projectUuid },
+      { projectId: null }
+    );
 
     // Then delete the project
-    const stmt = db.prepare('DELETE FROM projects WHERE id = ?');
-    const result = stmt.run(projectUuid);
+    const result = await projectRepo.delete({ id: projectUuid });
 
-    if (result.changes > 0) {
+    if (result.affected && result.affected > 0) {
       this.idMap.unregisterMapping(id, projectUuid, EntityType.PROJECT);
     }
 
     // Check if any rows were affected
-    return result.changes > 0;
+    return (result.affected || 0) > 0;
   }
 
   /**
@@ -274,20 +250,24 @@ class ProjectService {
    * @param username The username to filter projects by
    * @returns Array of matching Projects
    */
-  searchProjectsByName(name: string, username: string): Project[] {
+  async searchProjectsByName(name: string, username: string): Promise<Project[]> {
     // Get or create the user (automatic registration)
-    const user = this.userSvc.getOrCreateUser(username);
+    const user = await this.userSvc.getOrCreateUser(username);
 
     // Add wildcards to the search term for partial matching
     const searchTerm = `%${name}%`;
 
-    const db = this.db;
+    const projectRepo = this.dbService.getProjectRepository();
 
-    // COLLATE NOCASE makes the search case-insensitive
-    const stmt = db.prepare('SELECT * FROM projects WHERE username = ? AND name COLLATE NOCASE LIKE ? ORDER BY name');
-    const rows = stmt.all(user.username, searchTerm) as any[];
+    const projects = await projectRepo.find({
+      where: {
+        username: user.username,
+        name: Like(searchTerm),
+      },
+      order: { name: 'ASC' }
+    });
 
-    return rows.map(row => this.rowToProject(row));
+    return projects.map(project => this.entityToProject(project));
   }
 
   /**
@@ -299,42 +279,43 @@ class ProjectService {
    * @param username The username to verify ownership
    * @returns Array of todo IDs (task-*) in the project
    */
-  getTodosInProject(projectId: string, username: string): string[] {
+  async getTodosInProject(projectId: string, username: string): Promise<string[]> {
     // Verify the project exists and belongs to the user
-    const project = this.getProject(projectId, username);
+    const project = await this.getProject(projectId, username);
     if (!project) return [];
 
-    const db = this.db;
-    const stmt = db.prepare('SELECT id FROM todos WHERE project_id = ? ORDER BY createdAt');
-
+    const todoRepo = this.dbService.getTodoRepository();
     const projectUuid = this.idMap.getUuid(projectId, EntityType.PROJECT);
     if (!projectUuid) return [];
 
-    const rows = stmt.all(projectUuid) as any[];
+    const todos = await todoRepo.find({
+      where: { projectId: projectUuid },
+      order: { createdAt: 'ASC' }
+    });
 
     // Convert UUIDs back to task-* format
-    return rows.map(row => {
-      return this.idMap.getHumanReadableId(row.id, EntityType.TODO);
+    return todos.map(todo => {
+      return this.idMap.getHumanReadableId(todo.id, EntityType.TODO);
     });
   }
 
   /**
-   * Helper to convert a database row to a Project object
+   * Helper to convert a database entity to a Project object
    *
    * Uses IdMapService to get human-readable ID mapping.
    *
-   * @param row The database row data
+   * @param entity The database entity data
    * @returns A properly formatted Project object
    */
-  private rowToProject(row: any): Project {
-    const humanReadableId = this.idMap.getHumanReadableId(row.id, EntityType.PROJECT);
+  private entityToProject(entity: any): Project {
+    const humanReadableId = this.idMap.getHumanReadableId(entity.id, EntityType.PROJECT);
     return {
       id: humanReadableId,
-      username: row.username,
-      name: row.name,
-      description: row.description,
-      createdAt: row.createdAt,
-      updatedAt: row.updatedAt
+      username: entity.username,
+      name: entity.name,
+      description: entity.description,
+      createdAt: entity.createdAt,
+      updatedAt: entity.updatedAt
     };
   }
 }

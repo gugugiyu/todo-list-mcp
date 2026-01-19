@@ -17,9 +17,11 @@
  * 3. It connects to a transport (stdio in this case)
  * 4. It handles incoming tool calls from clients (like Claude)
  */
+import 'reflect-metadata';
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
+import { initializeDataSource, closeDataSource } from "./data-source.js";
 
 // Import models and schemas
 import {
@@ -87,9 +89,9 @@ const server = new McpServer({
  * @param errorMessage The message to include if an error occurs
  * @returns Either the operation result or an Error
  */
-async function safeExecute<T>(operation: () => T, errorMessage: string) {
+async function safeExecute<T>(operation: () => T | Promise<T>, errorMessage: string): Promise<T | Error> {
   try {
-    const result = operation();
+    const result = await operation();
     return result;
   } catch (error) {
     console.error(errorMessage, error);
@@ -125,9 +127,9 @@ server.tool(
     priority: z.nativeEnum(Priority, {"message": "Invalid priority value"})
   },
   async ({ username, title, description, priority }) => {
-    const result = await safeExecute(() => {
+    const result = await safeExecute(async () => {
       const validatedData = CreateTodoSchema.parse({ username, title, description, priority });
-      const newTodo = todoService.createTodo(validatedData);
+      const newTodo = await todoService.createTodo(validatedData);
       return formatTodo(newTodo);
     }, "Failed to create todo");
 
@@ -163,8 +165,8 @@ server.tool(
     isCompleted: z.boolean().optional()
   },
   async ({ username, useRelativeTime, limit, offset, isCompleted }) => {
-    const result = await safeExecute(() => {
-      const todos = todoService.getAllTodos(
+    const result = await safeExecute(async () => {
+      const todos = await todoService.getAllTodos(
         username,
         useRelativeTime || false,
         limit || 100,
@@ -198,8 +200,8 @@ server.tool(
     id: z.string().regex(/task-[\d]+/, "Invalid ID value"),
   },
   async ({ username, id }) => {
-    const result = await safeExecute(() => {
-      const todo = todoService.getTodo(id, username);
+    const result = await safeExecute(async () => {
+      const todo = await todoService.getTodo(id, username);
       if (!todo) {
         throw new Error(`Todo with ID ${id} not found.`);
       }
@@ -234,7 +236,7 @@ server.tool(
     priority: z.nativeEnum(Priority, {"message": "Invalid priority value"}).optional(),
   },
   async ({ username, id, title, description, priority }) => {
-    const result = await safeExecute(() => {
+    const result = await safeExecute(async () => {
       const validatedData = UpdateTodoSchema.parse({ id, title, description, priority });
 
       // Ensure at least one field is being updated
@@ -242,7 +244,7 @@ server.tool(
         throw new Error("At least one field (title, description, or priority) must be provided");
       }
 
-      const updatedTodo = todoService.updateTodo(validatedData, username);
+      const updatedTodo = await todoService.updateTodo(validatedData, username);
       if (!updatedTodo) {
         throw new Error(`Todo with ID ${id} not found`);
       }
@@ -280,9 +282,9 @@ server.tool(
     id: z.string().regex(/task-[\d]+/, "Invalid ID value"),
   },
   async ({ username, id }) => {
-    const result = await safeExecute(() => {
+    const result = await safeExecute(async () => {
       const validatedData = CompleteTodoSchema.parse({ id });
-      const completedTodo = todoService.completeTodo(validatedData.id, username);
+      const completedTodo = await todoService.completeTodo(validatedData.id, username);
       
       if (!completedTodo) {
         throw new Error(`Todo with ID ${id} not found`);
@@ -316,15 +318,15 @@ server.tool(
     id: z.string().regex(/task-[\d]+/, "Invalid ID value"),
   },
   async ({ username, id }) => {
-    const result = await safeExecute(() => {
+    const result = await safeExecute(async () => {
       const validatedData = DeleteTodoSchema.parse({ id });
-      const todo = todoService.getTodo(validatedData.id, username);
+      const todo = await todoService.getTodo(validatedData.id, username);
       
       if (!todo) {
         throw new Error(`Todo with ID ${id} not found`);
       }
       
-      const success = todoService.deleteTodo(validatedData.id, username);
+      const success = await todoService.deleteTodo(validatedData.id, username);
       
       if (!success) {
         throw new Error(`Failed to delete todo with ID ${id}`);
@@ -362,9 +364,9 @@ server.tool(
     title: z.string().min(1, "Search term is required"),
   },
   async ({ username, title }) => {
-    const result = await safeExecute(() => {
+    const result = await safeExecute(async () => {
       const validatedData = SearchTodosByTitleSchema.parse({ title });
-      const todos = todoService.searchByTitle(validatedData.title, username);
+      const todos = await todoService.searchByTitle(validatedData.title, username);
       return formatTodoList(todos);
     }, "Failed to search todos");
 
@@ -397,9 +399,9 @@ server.tool(
     date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be in YYYY-MM-DD format"),
   },
   async ({ username, date }) => {
-    const result = await safeExecute(() => {
+    const result = await safeExecute(async () => {
       const validatedData = SearchTodosByDateSchema.parse({ date });
-      const todos = todoService.searchByDate(validatedData.date, username);
+      const todos = await todoService.searchByDate(validatedData.date, username);
       return formatTodoList(todos);
     }, "Failed to search todos by date");
 
@@ -432,9 +434,9 @@ server.tool(
     priority: z.nativeEnum(Priority, {"message": "Invalid priority value"}),
   },
   async ({ username, priority }) => {
-    const result = await safeExecute(() => {
+    const result = await safeExecute(async () => {
       const validatedData = SearchByPrioritySchema.parse({ priority });
-      const todos = todoService.searchByPriority(validatedData.priority, username);
+      const todos = await todoService.searchByPriority(validatedData.priority, username);
       return formatTodoList(todos);
     }, "Failed to search todos");
 
@@ -457,9 +459,9 @@ server.tool(
     color: z.string().regex(/^#[0-9A-Fa-f]{6}$/, "Color must be a valid hex color code").optional(),
   },
   async ({ name, color }) => {
-    const result = await safeExecute(() => {
+    const result = await safeExecute(async () => {
       const validatedData = CreateTagSchema.parse({ name, color });
-      const newTag = tagService.createTag(validatedData);
+      const newTag = await tagService.createTag(validatedData);
       return formatTag(newTag);
     }, "Failed to create tag");
 
@@ -482,8 +484,8 @@ server.tool(
     offset: z.number().optional()
   },
   async ({ limit, offset }) => {
-    const result = await safeExecute(() => {
-      const tags = tagService.getAllTags(limit, offset);
+    const result = await safeExecute(async () => {
+      const tags = await tagService.getAllTags(limit, offset);
       return formatTagList(tags);
     }, "Failed to list tags");
 
@@ -511,9 +513,9 @@ server.tool(
     ])
   },
   async ({ id }) => {
-    const result = await safeExecute(() => {
+    const result = await safeExecute(async () => {
       const ids = Array.isArray(id) ? id : [id];
-      const tags = tagService.getTags(ids);
+      const tags = await tagService.getTags(ids);
       
       if (tags.length === 0) {
         return "No tags found with the provided ID(s)";
@@ -546,7 +548,7 @@ server.tool(
     color: z.string().regex(/^#[0-9A-Fa-f]{6}$/, "Color must be a valid hex color code").optional(),
   },
   async ({ id, name, color }) => {
-    const result = await safeExecute(() => {
+    const result = await safeExecute(async () => {
       const validatedData = UpdateTagSchema.parse({ id, name, color });
 
       // Ensure at least one field is being updated
@@ -554,7 +556,7 @@ server.tool(
         throw new Error("At least one field (name or color) must be provided");
       }
 
-      const updatedTag = tagService.updateTag(validatedData);
+      const updatedTag = await tagService.updateTag(validatedData);
       if (!updatedTag) {
         throw new Error(`Tag with ID ${id} not found`);
       }
@@ -580,13 +582,13 @@ server.tool(
     id: z.string().regex(/tag-[\d]+/, "Invalid tag ID"),
   },
   async ({ id }) => {
-    const result = await safeExecute(() => {
-      const tag = tagService.getTag(id);
+    const result = await safeExecute(async () => {
+      const tag = await tagService.getTag(id);
       if (!tag) {
         throw new Error(`Tag with ID ${id} not found`);
       }
 
-      const success = tagService.deleteTag(id);
+      const success = await tagService.deleteTag(id);
       if (!success) {
         throw new Error(`Failed to delete tag with ID ${id}`);
       }
@@ -612,8 +614,8 @@ server.tool(
     name: z.string().min(1, "Search term is required"),
   },
   async ({ name }) => {
-    const result = await safeExecute(() => {
-      const tags = tagService.searchTags(name);
+    const result = await safeExecute(async () => {
+      const tags = await tagService.searchTags(name);
       return formatTagList(tags);
     }, "Failed to search tags");
 
@@ -637,20 +639,20 @@ server.tool(
     tagId: z.string().regex(/tag-[\d]+/, "Invalid tag ID"),
   },
   async ({ username, todoId, tagId }) => {
-    const result = await safeExecute(() => {
+    const result = await safeExecute(async () => {
       // Verify todo exists and belongs to user
-      const todo = todoService.getTodo(todoId, username);
+      const todo = await todoService.getTodo(todoId, username);
       if (!todo) {
         throw new Error(`Todo with ID ${todoId} not found`);
       }
 
       // Verify tag exists
-      const tag = tagService.getTag(tagId);
+      const tag = await tagService.getTag(tagId);
       if (!tag) {
         throw new Error(`Tag with ID ${tagId} not found`);
       }
 
-      const added = tagService.addTagToTodo(todoId, tagId);
+      const added = await tagService.addTagToTodo(todoId, tagId);
       if (!added) {
         return `Tag "${tag.name}" is already assigned to this todo`;
       }
@@ -678,20 +680,20 @@ server.tool(
     tagId: z.string().regex(/tag-[\d]+/, "Invalid tag ID"),
   },
   async ({ username, todoId, tagId }) => {
-    const result = await safeExecute(() => {
+    const result = await safeExecute(async () => {
       // Verify todo exists and belongs to user
-      const todo = todoService.getTodo(todoId, username);
+      const todo = await todoService.getTodo(todoId, username);
       if (!todo) {
         throw new Error(`Todo with ID ${todoId} not found`);
       }
 
       // Verify tag exists
-      const tag = tagService.getTag(tagId);
+      const tag = await tagService.getTag(tagId);
       if (!tag) {
         throw new Error(`Tag with ID ${tagId} not found`);
       }
 
-      const removed = tagService.removeTagFromTodo(todoId, tagId);
+      const removed = await tagService.removeTagFromTodo(todoId, tagId);
       if (!removed) {
         return `Tag "${tag.name}" is not assigned to this todo`;
       }
@@ -718,14 +720,14 @@ server.tool(
     todoId: z.string().regex(/task-[\d]+/, "Invalid todo ID"),
   },
   async ({ username, todoId }) => {
-    const result = await safeExecute(() => {
+    const result = await safeExecute(async () => {
       // Verify todo exists and belongs to user
-      const todo = todoService.getTodo(todoId, username);
+      const todo = await todoService.getTodo(todoId, username);
       if (!todo) {
         throw new Error(`Todo with ID ${todoId} not found`);
       }
 
-      const tags = tagService.getTagsForTodo(todoId);
+      const tags = await tagService.getTagsForTodo(todoId);
       const tagNames = formatTagNames(tags);
       return `Tags for "${todo.title}": ${tagNames}`;
     }, "Failed to get tags for todo");
@@ -749,22 +751,22 @@ server.tool(
     tagId: z.string().regex(/tag-[\d]+/, "Invalid tag ID"),
   },
   async ({ username, tagId }) => {
-    const result = await safeExecute(() => {
+    const result = await safeExecute(async () => {
       // Verify tag exists
-      const tag = tagService.getTag(tagId);
+      const tag = await tagService.getTag(tagId);
       if (!tag) {
         throw new Error(`Tag with ID ${tagId} not found`);
       }
 
-      const todoIds = tagService.getTodosWithTag(tagId);
+      const todoIds = await tagService.getTodosWithTag(tagId);
       if (todoIds.length === 0) {
         return `No todos found with tag "${tag.name}"`;
       }
 
       // Get the full todo objects, filtering by username
-      const todos = todoIds
-        .map(id => todoService.getTodo(id, username))
-        .filter((todo): todo is any => todo !== undefined);
+      const todoPromises = todoIds.map((id: string) => todoService.getTodo(id, username));
+      const todoResults = await Promise.all(todoPromises);
+      const todos = todoResults.filter((todo): todo is any => todo !== undefined);
 
       return `Todos with tag "${tag.name}":\n\n${formatTodoList(todos)}`;
     }, "Failed to search todos by tag");
@@ -792,19 +794,19 @@ server.tool(
     blockerTodoId: z.string().regex(/task-[\d]+/, "Invalid blocker todo ID"),
   },
   async ({ username, blockedTodoId, blockerTodoId }) => {
-    const result = await safeExecute(() => {
+    const result = await safeExecute(async () => {
       // Verify both todos exist
-      const blockedTodo = todoService.getTodo(blockedTodoId, username);
+      const blockedTodo = await todoService.getTodo(blockedTodoId, username);
       if (!blockedTodo) {
         throw new Error(`Todo with ID ${blockedTodoId} not found`);
       }
 
-      const blockerTodo = todoService.getTodo(blockerTodoId, username);
+      const blockerTodo = await todoService.getTodo(blockerTodoId, username);
       if (!blockerTodo) {
         throw new Error(`Todo with ID ${blockerTodoId} not found`);
       }
 
-      const added = todoService.addBlockerDependency(blockedTodoId, blockerTodoId, username);
+      const added = await todoService.addBlockerDependency(blockedTodoId, blockerTodoId, username);
       if (!added) {
         return `"${blockedTodo.title}" is already blocked by "${blockerTodo.title}"`;
       }
@@ -832,19 +834,19 @@ server.tool(
     blockerTodoId: z.string().regex(/task-[\d]+/, "Invalid blocker todo ID"),
   },
   async ({ username, blockedTodoId, blockerTodoId }) => {
-    const result = await safeExecute(() => {
+    const result = await safeExecute(async () => {
       // Verify both todos exist
-      const blockedTodo = todoService.getTodo(blockedTodoId, username);
+      const blockedTodo = await todoService.getTodo(blockedTodoId, username);
       if (!blockedTodo) {
         throw new Error(`Todo with ID ${blockedTodoId} not found`);
       }
 
-      const blockerTodo = todoService.getTodo(blockerTodoId, username);
+      const blockerTodo = await todoService.getTodo(blockerTodoId, username);
       if (!blockerTodo) {
         throw new Error(`Todo with ID ${blockerTodoId} not found`);
       }
 
-      const removed = todoService.removeBlockerDependency(blockedTodoId, blockerTodoId, username);
+      const removed = await todoService.removeBlockerDependency(blockedTodoId, blockerTodoId, username);
       if (!removed) {
         throw new Error(`"${blockedTodo.title}" is not blocked by "${blockerTodo.title}"`);
       }
@@ -873,14 +875,14 @@ server.tool(
     todoId: z.string().regex(/task-[\d]+/, "Invalid todo ID"),
   },
   async ({ username, todoId }) => {
-    const result = await safeExecute(() => {
+    const result = await safeExecute(async () => {
       // Verify todo exists
-      const todo = todoService.getTodo(todoId, username);
+      const todo = await todoService.getTodo(todoId, username);
       if (!todo) {
         throw new Error(`Todo with ID ${todoId} not found`);
       }
 
-      const blockers = todoService.getBlockersForTodo(todoId, username);
+      const blockers = await todoService.getBlockersForTodo(todoId, username);
       if (blockers.length === 0) {
         return `"${todo.title}" is not blocked by any todos`;
       }
@@ -909,22 +911,22 @@ server.tool(
     todoId: z.string().regex(/task-[\d]+/, "Invalid todo ID"),
   },
   async ({ username, todoId }) => {
-    const result = await safeExecute(() => {
+    const result = await safeExecute(async () => {
       // Verify todo exists
-      const todo = todoService.getTodo(todoId, username);
+      const todo = await todoService.getTodo(todoId, username);
       if (!todo) {
         throw new Error(`Todo with ID ${todoId} not found`);
       }
 
-      const blockedIds = todoService.getTodosBlockedBy(todoId, username);
+      const blockedIds = await todoService.getTodosBlockedBy(todoId, username);
       if (blockedIds.length === 0) {
         return `"${todo.title}" is not blocking any todos`;
       }
 
       // Get the full todo objects
-      const blockedTodos = blockedIds
-        .map(id => todoService.getTodo(id, username))
-        .filter((todo): todo is any => todo !== undefined);
+      const blockedTodoPromises = blockedIds.map((id: string) => todoService.getTodo(id, username));
+      const blockedTodoResults = await Promise.all(blockedTodoPromises);
+      const blockedTodos = blockedTodoResults.filter((todo): todo is any => todo !== undefined);
 
       return `Todos blocked by "${todo.title}":\n\n${formatTodoList(blockedTodos)}`;
     }, "Failed to get blocked todos");
@@ -947,8 +949,8 @@ server.tool(
   "List all registered users",
   {},
   async () => {
-    const result = await safeExecute(() => {
-      const users = userService.getAllUsers();
+    const result = await safeExecute(async () => {
+      const users = await userService.getAllUsers();
       if (users.length === 0) {
         return "No users found.";
       }
@@ -977,9 +979,9 @@ server.tool(
     description: z.string().min(1, "Project description is required").max(1000, "Project description must be less than 1000 characters"),
   },
   async ({ username, name, description }) => {
-    const result = await safeExecute(() => {
+    const result = await safeExecute(async () => {
       const validatedData = CreateProjectSchema.parse({ username, name, description });
-      const newProject = projectService.createProject(validatedData);
+      const newProject = await projectService.createProject(validatedData);
       return formatProject(newProject);
     }, "Failed to create project");
 
@@ -1003,8 +1005,8 @@ server.tool(
     offset: z.number().optional()
   },
   async ({ username, limit, offset }) => {
-    const result = await safeExecute(() => {
-      const projects = projectService.getAllProjects(username, limit, offset);
+    const result = await safeExecute(async () => {
+      const projects = await projectService.getAllProjects(username, limit, offset);
       return formatProjectList(projects);
     }, "Failed to list projects");
 
@@ -1027,8 +1029,8 @@ server.tool(
     id: z.string().regex(/project-[\d]+/, "Invalid project ID"),
   },
   async ({ username, id }) => {
-    const result = await safeExecute(() => {
-      const project = projectService.getProject(id, username);
+    const result = await safeExecute(async () => {
+      const project = await projectService.getProject(id, username);
       if (!project) {
         throw new Error(`Project with ID ${id} not found`);
       }
@@ -1056,7 +1058,7 @@ server.tool(
     description: z.string().min(1, "Project description is required").max(1000, "Project description must be less than 1000 characters").optional(),
   },
   async ({ username, id, name, description }) => {
-    const result = await safeExecute(() => {
+    const result = await safeExecute(async () => {
       const validatedData = UpdateProjectSchema.parse({ id, name, description });
 
       // Ensure at least one field is being updated
@@ -1064,7 +1066,7 @@ server.tool(
         throw new Error("At least one field (name or description) must be provided");
       }
 
-      const updatedProject = projectService.updateProject(validatedData, username);
+      const updatedProject = await projectService.updateProject(validatedData, username);
       if (!updatedProject) {
         throw new Error(`Project with ID ${id} not found`);
       }
@@ -1091,13 +1093,13 @@ server.tool(
     id: z.string().regex(/project-[\d]+/, "Invalid project ID"),
   },
   async ({ username, id }) => {
-    const result = await safeExecute(() => {
-      const project = projectService.getProject(id, username);
+    const result = await safeExecute(async () => {
+      const project = await projectService.getProject(id, username);
       if (!project) {
         throw new Error(`Project with ID ${id} not found`);
       }
 
-      const success = projectService.deleteProject(id, username);
+      const success = await projectService.deleteProject(id, username);
       if (!success) {
         throw new Error(`Failed to delete project with ID ${id}`);
       }
@@ -1124,9 +1126,9 @@ server.tool(
     name: z.string().min(1, "Search term is required"),
   },
   async ({ username, name }) => {
-    const result = await safeExecute(() => {
+    const result = await safeExecute(async () => {
       const validatedData = SearchProjectsByNameSchema.parse({ name });
-      const projects = projectService.searchProjectsByName(validatedData.name, username);
+      const projects = await projectService.searchProjectsByName(validatedData.name, username);
       return formatProjectList(projects);
     }, "Failed to search projects");
 
@@ -1149,21 +1151,21 @@ server.tool(
     projectId: z.string().regex(/project-[\d]+/, "Invalid project ID"),
   },
   async ({ username, projectId }) => {
-    const result = await safeExecute(() => {
-      const project = projectService.getProject(projectId, username);
+    const result = await safeExecute(async () => {
+      const project = await projectService.getProject(projectId, username);
       if (!project) {
         throw new Error(`Project with ID ${projectId} not found`);
       }
 
-      const todoIds = projectService.getTodosInProject(projectId, username);
+      const todoIds = await projectService.getTodosInProject(projectId, username);
       if (todoIds.length === 0) {
         return `No todos found in project "${project.name}"`;
       }
 
       // Get the full todo objects
-      const todos = todoIds
-        .map(id => todoService.getTodo(id, username))
-        .filter((todo): todo is any => todo !== undefined);
+      const todoPromises = todoIds.map((id: string) => todoService.getTodo(id, username));
+      const todoResults = await Promise.all(todoPromises);
+      const todos = todoResults.filter((todo): todo is any => todo !== undefined);
 
       return `Todos in project "${project.name}":\n\n${formatTodoList(todos)}`;
     }, "Failed to get project todos");
@@ -1188,20 +1190,20 @@ server.tool(
     projectId: z.string().regex(/project-[\d]+/, "Invalid project ID"),
   },
   async ({ username, todoId, projectId }) => {
-    const result = await safeExecute(() => {
+    const result = await safeExecute(async () => {
       // Verify todo exists
-      const todo = todoService.getTodo(todoId, username);
+      const todo = await todoService.getTodo(todoId, username);
       if (!todo) {
         throw new Error(`Todo with ID ${todoId} not found`);
       }
 
       // Verify project exists
-      const project = projectService.getProject(projectId, username);
+      const project = await projectService.getProject(projectId, username);
       if (!project) {
         throw new Error(`Project with ID ${projectId} not found`);
       }
 
-      const assigned = todoService.assignTodoToProject(todoId, projectId, username);
+      const assigned = await todoService.assignTodoToProject(todoId, projectId, username);
       if (!assigned) {
         throw new Error(`Failed to assign todo to project`);
       }
@@ -1228,14 +1230,14 @@ server.tool(
     todoId: z.string().regex(/task-[\d]+/, "Invalid todo ID"),
   },
   async ({ username, todoId }) => {
-    const result = await safeExecute(() => {
+    const result = await safeExecute(async () => {
       // Verify todo exists
-      const todo = todoService.getTodo(todoId, username);
+      const todo = await todoService.getTodo(todoId, username);
       if (!todo) {
         throw new Error(`Todo with ID ${todoId} not found`);
       }
 
-      const removed = todoService.removeTodoFromProject(todoId, username);
+      const removed = await todoService.removeTodoFromProject(todoId, username);
       if (!removed) {
         throw new Error(`Failed to remove todo from project`);
       }
@@ -1268,9 +1270,10 @@ server.tool(
 async function main() {
   console.error("Starting Todo MCP Server...");
   console.error(`SQLite database path: ${config.db.path}`);
-  
+
   try {
-    // Database is automatically initialized when the service is imported
+    // Initialize TypeORM DataSource
+    await initializeDataSource();
     
     /**
      * Set up graceful shutdown to close the database
@@ -1278,15 +1281,15 @@ async function main() {
      * This ensures data is properly saved when the server is stopped.
      * Both SIGINT (Ctrl+C) and SIGTERM (kill command) are handled.
      */
-    process.on('SIGINT', () => {
+    process.on('SIGINT', async () => {
       console.error('Shutting down...');
-      databaseService.close();
+      await closeDataSource();
       process.exit(0);
     });
-    
-    process.on('SIGTERM', () => {
+
+    process.on('SIGTERM', async () => {
       console.error('Shutting down...');
-      databaseService.close();
+      await closeDataSource();
       process.exit(0);
     });
     
@@ -1302,7 +1305,7 @@ async function main() {
     console.error("Todo MCP Server running on stdio transport");
   } catch (error) {
     console.error("Failed to start Todo MCP Server:", error);
-    databaseService.close();
+    await closeDataSource();
     process.exit(1);
   }
 }
