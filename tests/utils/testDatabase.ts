@@ -68,11 +68,11 @@ export class TestDatabaseService {
     const queryRunner = this.dataSource.createQueryRunner();
     try {
       await queryRunner.connect();
-      
+
       // Clear junction tables first (due to foreign key constraints)
       await queryRunner.query('DELETE FROM todo_dependencies');
       await queryRunner.query('DELETE FROM todo_tags');
-      
+
       // Clear main tables
       await queryRunner.query('DELETE FROM todos');
       await queryRunner.query('DELETE FROM projects');
@@ -101,7 +101,7 @@ export class TestDatabaseService {
       // Also clean up WAL files
       await fs.unlink(`${TEST_DB_PATH}-wal`).catch(() => {});
       await fs.unlink(`${TEST_DB_PATH}-shm`).catch(() => {});
-    } catch (error) {
+    } catch (_) {
       // File might not exist, ignore error
     }
   }
@@ -124,7 +124,7 @@ export async function seedUser(dataSource: DataSource, username: string): Promis
   const userRepo = dataSource.getRepository(User);
   const user = userRepo.create({
     username: username.toLowerCase(),
-    createdAt: new Date().toISOString()
+    createdAt: new Date().toISOString(),
   });
   await userRepo.save(user);
 }
@@ -132,17 +132,20 @@ export async function seedUser(dataSource: DataSource, username: string): Promis
 /**
  * Seed a todo in the test database
  */
-export async function seedTodo(dataSource: DataSource, data: {
-  id: string;
-  username: string;
-  title: string;
-  priority: string;
-  description: string;
-  completedAt?: string | null;
-  createdAt?: string;
-  updatedAt?: string;
-  projectId?: string | null;
-}): Promise<void> {
+export async function seedTodo(
+  dataSource: DataSource,
+  data: {
+    id: string;
+    username: string;
+    title: string;
+    priority: string;
+    description: string;
+    completedAt?: string | null;
+    createdAt?: string;
+    updatedAt?: string;
+    projectId?: string | null;
+  }
+): Promise<void> {
   const todoRepo = dataSource.getRepository(Todo);
   const todo = todoRepo.create({
     id: data.id,
@@ -153,7 +156,7 @@ export async function seedTodo(dataSource: DataSource, data: {
     completedAt: data.completedAt || null,
     createdAt: data.createdAt || new Date().toISOString(),
     updatedAt: data.updatedAt || new Date().toISOString(),
-    projectId: data.projectId || null
+    projectId: data.projectId || null,
   });
   await todoRepo.save(todo);
 }
@@ -161,20 +164,23 @@ export async function seedTodo(dataSource: DataSource, data: {
 /**
  * Seed a tag in the test database
  */
-export async function seedTag(dataSource: DataSource, data: {
-  id: string;
-  name: string;
-  color?: string | null;
-  createdAt?: string;
-  updatedAt?: string;
-}): Promise<void> {
+export async function seedTag(
+  dataSource: DataSource,
+  data: {
+    id: string;
+    name: string;
+    color?: string | null;
+    createdAt?: string;
+    updatedAt?: string;
+  }
+): Promise<void> {
   const tagRepo = dataSource.getRepository(Tag);
   const tag = tagRepo.create({
     id: data.id,
     name: data.name,
     color: data.color || null,
     createdAt: data.createdAt || new Date().toISOString(),
-    updatedAt: data.updatedAt || new Date().toISOString()
+    updatedAt: data.updatedAt || new Date().toISOString(),
   });
   await tagRepo.save(tag);
 }
@@ -182,14 +188,17 @@ export async function seedTag(dataSource: DataSource, data: {
 /**
  * Seed a project in the test database
  */
-export async function seedProject(dataSource: DataSource, data: {
-  id: string;
-  username: string;
-  name: string;
-  description: string;
-  createdAt?: string;
-  updatedAt?: string;
-}): Promise<void> {
+export async function seedProject(
+  dataSource: DataSource,
+  data: {
+    id: string;
+    username: string;
+    name: string;
+    description: string;
+    createdAt?: string;
+    updatedAt?: string;
+  }
+): Promise<void> {
   const projectRepo = dataSource.getRepository(Project);
   const project = projectRepo.create({
     id: data.id,
@@ -197,7 +206,7 @@ export async function seedProject(dataSource: DataSource, data: {
     name: data.name,
     description: data.description,
     createdAt: data.createdAt || new Date().toISOString(),
-    updatedAt: data.updatedAt || new Date().toISOString()
+    updatedAt: data.updatedAt || new Date().toISOString(),
   });
   await projectRepo.save(project);
 }
@@ -205,14 +214,21 @@ export async function seedProject(dataSource: DataSource, data: {
 /**
  * Seed a tag-todo relationship
  */
-export async function seedTagTodoRelation(dataSource: DataSource, todoId: string, tagId: string): Promise<void> {
+export async function seedTagTodoRelation(
+  dataSource: DataSource,
+  todoId: string,
+  tagId: string
+): Promise<void> {
   const queryRunner = dataSource.createQueryRunner();
   try {
     await queryRunner.connect();
-    await queryRunner.query(`
+    await queryRunner.query(
+      `
       INSERT INTO todo_tags (todo_id, tag_id, createdAt)
       VALUES (?, ?, ?)
-    `, [todoId, tagId, new Date().toISOString()]);
+    `,
+      [todoId, tagId, new Date().toISOString()]
+    );
   } finally {
     await queryRunner.release();
   }
@@ -221,14 +237,21 @@ export async function seedTagTodoRelation(dataSource: DataSource, todoId: string
 /**
  * Seed a todo dependency
  */
-export async function seedTodoDependency(dataSource: DataSource, blockedTodoId: string, blockerTodoId: string): Promise<void> {
+export async function seedTodoDependency(
+  dataSource: DataSource,
+  blockedTodoId: string,
+  blockerTodoId: string
+): Promise<void> {
   const queryRunner = dataSource.createQueryRunner();
   try {
     await queryRunner.connect();
-    await queryRunner.query(`
+    await queryRunner.query(
+      `
       INSERT INTO todo_dependencies (blocked_todo_id, blocker_todo_id, createdAt)
       VALUES (?, ?, ?)
-    `, [blockedTodoId, blockerTodoId, new Date().toISOString()]);
+    `,
+      [blockedTodoId, blockerTodoId, new Date().toISOString()]
+    );
   } finally {
     await queryRunner.release();
   }

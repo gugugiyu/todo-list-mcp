@@ -8,7 +8,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { UserService } from '../../src/services/UserService.js';
 import { DatabaseService } from '../../src/services/DatabaseService.js';
-import { TestDatabaseService, seedUser, generateTestUuid } from '../utils/testDatabase.js';
+import { TestDatabaseService, generateTestUuid } from '../utils/testDatabase.js';
 
 describe('UserService', () => {
   let testDb: TestDatabaseService;
@@ -209,18 +209,54 @@ describe('UserService', () => {
       const todo2Id = generateTestUuid();
       const todo3Id = generateTestUuid();
 
-      await dataSource.query(`
+      await dataSource.query(
+        `
         INSERT INTO todos (id, username, title, priority, description, completedAt, createdAt, updatedAt)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `, [todo1Id, username, 'Todo 1', 'MEDIUM', 'Description 1', null, new Date().toISOString(), new Date().toISOString()]);
-      await dataSource.query(`
+      `,
+        [
+          todo1Id,
+          username,
+          'Todo 1',
+          'MEDIUM',
+          'Description 1',
+          null,
+          new Date().toISOString(),
+          new Date().toISOString(),
+        ]
+      );
+      await dataSource.query(
+        `
         INSERT INTO todos (id, username, title, priority, description, completedAt, createdAt, updatedAt)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `, [todo2Id, username, 'Todo 2', 'HIGH', 'Description 2', null, new Date().toISOString(), new Date().toISOString()]);
-      await dataSource.query(`
+      `,
+        [
+          todo2Id,
+          username,
+          'Todo 2',
+          'HIGH',
+          'Description 2',
+          null,
+          new Date().toISOString(),
+          new Date().toISOString(),
+        ]
+      );
+      await dataSource.query(
+        `
         INSERT INTO todos (id, username, title, priority, description, completedAt, createdAt, updatedAt)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `, [todo3Id, 'other-user', 'Todo 3', 'LOW', 'Description 3', null, new Date().toISOString(), new Date().toISOString()]);
+      `,
+        [
+          todo3Id,
+          'other-user',
+          'Todo 3',
+          'LOW',
+          'Description 3',
+          null,
+          new Date().toISOString(),
+          new Date().toISOString(),
+        ]
+      );
 
       // Delete user
       await userService.deleteUser(username);

@@ -24,12 +24,12 @@ import { v4 as uuidv4 } from 'uuid';
  * - Name and description are required fields
  */
 export interface Project {
-  id: string;           // Format: project-* (LLM-friendly mapping to UUID)
-  username: string;     // The user who owns this project
-  name: string;         // Project name (required)
-  description: string;  // Project description (required)
-  createdAt: string;    // ISO timestamp of creation
-  updatedAt: string;    // ISO timestamp of last update
+  id: string; // Format: project-* (LLM-friendly mapping to UUID)
+  username: string; // The user who owns this project
+  name: string; // Project name (required)
+  description: string; // Project description (required)
+  createdAt: string; // ISO timestamp of creation
+  updatedAt: string; // ISO timestamp of last update
 }
 
 /**
@@ -41,26 +41,40 @@ export interface Project {
 
 // Schema for creating a new project - requires username, name and description
 export const CreateProjectSchema = z.object({
-  username: z.string().min(1, "Username is required"),
-  name: z.string().min(1, "Project name is required").max(100, "Project name must be less than 100 characters"),
-  description: z.string().min(1, "Project description is required").max(1000, "Project description must be less than 1000 characters"),
+  username: z.string().min(1, 'Username is required'),
+  name: z
+    .string()
+    .min(1, 'Project name is required')
+    .max(100, 'Project name must be less than 100 characters'),
+  description: z
+    .string()
+    .min(1, 'Project description is required')
+    .max(1000, 'Project description must be less than 1000 characters'),
 });
 
 // Schema for updating a project - requires ID, name and description are optional
 export const UpdateProjectSchema = z.object({
-  id: z.string().regex(/project-[\d]+/, "Invalid project ID"),
-  name: z.string().min(1, "Project name is required").max(100, "Project name must be less than 100 characters").optional(),
-  description: z.string().min(1, "Project description is required").max(1000, "Project description must be less than 1000 characters").optional(),
+  id: z.string().regex(/project-[\d]+/, 'Invalid project ID'),
+  name: z
+    .string()
+    .min(1, 'Project name is required')
+    .max(100, 'Project name must be less than 100 characters')
+    .optional(),
+  description: z
+    .string()
+    .min(1, 'Project description is required')
+    .max(1000, 'Project description must be less than 1000 characters')
+    .optional(),
 });
 
 // Schema for getting/deleting a project - requires only ID
 export const ProjectIdSchema = z.object({
-  id: z.string().regex(/project-[\d]+/, "Invalid project ID"),
+  id: z.string().regex(/project-[\d]+/, 'Invalid project ID'),
 });
 
 // Schema for searching projects by name - requires search term
 export const SearchProjectsByNameSchema = z.object({
-  name: z.string().min(1, "Search term is required"),
+  name: z.string().min(1, 'Search term is required'),
 });
 
 /**

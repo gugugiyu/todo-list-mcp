@@ -1,9 +1,9 @@
 /**
  * Todo.ts
- * 
+ *
  * This file defines the core data model for our Todo application, along with validation
  * schemas and a factory function for creating new Todo instances.
- * 
+ *
  * WHY USE ZOD?
  * - Zod provides runtime type validation, ensuring our data meets specific requirements
  * - Using schemas creates a clear contract for each operation's input requirements
@@ -14,13 +14,12 @@
 import { z } from 'zod';
 import { v4 as uuidv4 } from 'uuid';
 
-
 export enum Priority {
-  URGENT = "URGENT",
-  HIGH = "HIGH",
-  MEDIUM = "MEDIUM",
-  LOW = "LOW",
-  LOWEST = "LOWEST",
+  URGENT = 'URGENT',
+  HIGH = 'HIGH',
+  MEDIUM = 'MEDIUM',
+  LOW = 'LOW',
+  LOWEST = 'LOWEST',
 }
 
 /**
@@ -53,10 +52,10 @@ export interface Todo {
 
 /**
  * Input Validation Schemas
- * 
+ *
  * These schemas define the requirements for different operations.
  * Each schema serves as both documentation and runtime validation.
- * 
+ *
  * WHY SEPARATE SCHEMAS?
  * - Different operations have different validation requirements
  * - Keeps validation focused on only what's needed for each operation
@@ -65,54 +64,54 @@ export interface Todo {
 
 // Schema for creating a new todo - requires username, title and description
 export const CreateTodoSchema = z.object({
-  username: z.string().min(1, "Username is required"),
-  title: z.string().min(1, "Title is required"),
-  description: z.string().min(1, "Description is required"),
-  priority: z.nativeEnum(Priority, {"message": "Invalid priority value"})
+  username: z.string().min(1, 'Username is required'),
+  title: z.string().min(1, 'Title is required'),
+  description: z.string().min(1, 'Description is required'),
+  priority: z.nativeEnum(Priority, { message: 'Invalid priority value' }),
 });
 
 // Schema for updating a todo - requires ID, title and description are optional
 export const UpdateTodoSchema = z.object({
-  id: z.string().regex(/task-[\d]+/, "Invalid ID value"),
-  title: z.string().min(1, "Title is required").optional(),
-  description: z.string().min(1, "Description is required").optional(),
-  priority: z.nativeEnum(Priority, {"message": "Invalid priority value"}).optional()
+  id: z.string().regex(/task-[\d]+/, 'Invalid ID value'),
+  title: z.string().min(1, 'Title is required').optional(),
+  description: z.string().min(1, 'Description is required').optional(),
+  priority: z.nativeEnum(Priority, { message: 'Invalid priority value' }).optional(),
 });
 
 // Schema for completing a todo - requires only ID
 export const CompleteTodoSchema = z.object({
-  id: z.string().regex(/task-[\d]+/, "Invalid ID value"),
+  id: z.string().regex(/task-[\d]+/, 'Invalid ID value'),
 });
 
 // Schema for deleting a todo - requires only ID
 export const DeleteTodoSchema = z.object({
-  id: z.string().regex(/task-[\d]+/, "Invalid ID value"),
+  id: z.string().regex(/task-[\d]+/, 'Invalid ID value'),
 });
 
 // Schema for searching todos by title - requires search term
 export const SearchTodosByTitleSchema = z.object({
-  title: z.string().min(1, "Search term is required"),
+  title: z.string().min(1, 'Search term is required'),
 });
 
 // Schema for searching todos by date - requires date in YYYY-MM-DD format
 export const SearchTodosByDateSchema = z.object({
-  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be in YYYY-MM-DD format"),
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be in YYYY-MM-DD format'),
 });
 
 // Schema for searching with a specific priority
 export const SearchByPrioritySchema = z.object({
-  priority: z.nativeEnum(Priority, {"message": "Invalid priority value"}),
-})
+  priority: z.nativeEnum(Priority, { message: 'Invalid priority value' }),
+});
 
 /**
  * Factory Function: createTodo
- * 
+ *
  * WHY USE A FACTORY FUNCTION?
  * - Centralizes the creation logic in one place
  * - Ensures all required fields are set with proper default values
  * - Guarantees all todos have the same structure
  * - Makes it easy to change the implementation without affecting code that creates todos
- * 
+ *
  * @param data The validated input data
  * @returns A fully formed Todo object with generated ID and timestamps
  */

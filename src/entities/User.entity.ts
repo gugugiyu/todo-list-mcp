@@ -17,9 +17,9 @@ export class User {
   createdAt!: string;
 
   // Relationships
-  @OneToMany(() => Project, project => project.user)
+  @OneToMany(() => Project, (project) => project.user)
   projects!: Project[];
 
-  @OneToMany(() => Todo, todo => todo.user)
+  @OneToMany(() => Todo, (todo) => todo.user)
   todos!: Todo[];
 }

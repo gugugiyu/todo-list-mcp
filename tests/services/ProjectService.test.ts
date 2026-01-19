@@ -10,7 +10,7 @@ import { ProjectService } from '../../src/services/ProjectService.js';
 import { UserService } from '../../src/services/UserService.js';
 import { IdMapService, EntityType } from '../../src/services/IdMapService.js';
 import { DatabaseService } from '../../src/services/DatabaseService.js';
-import { TestDatabaseService, seedUser, seedProject, generateTestUuid } from '../utils/testDatabase.js';
+import { TestDatabaseService, generateTestUuid } from '../utils/testDatabase.js';
 
 describe('ProjectService', () => {
   let testDb: TestDatabaseService;
@@ -55,7 +55,7 @@ describe('ProjectService', () => {
     });
 
     it('should create user if they do not exist', async () => {
-      const project = await projectService.createProject({
+      await projectService.createProject({
         username: 'new-user',
         name: 'Test Project',
         description: 'Test Description',
@@ -168,13 +168,13 @@ describe('ProjectService', () => {
     beforeEach(async () => {
       await testDb.clearAll();
     });
- 
+
     it('should return empty array when no projects exist', async () => {
       const projects = await projectService.getAllProjects('test-user');
- 
+
       expect(projects).toEqual([]);
     });
- 
+
     it('should return all projects for user ordered by name', async () => {
       await projectService.createProject({
         username: 'test-user',
@@ -191,9 +191,9 @@ describe('ProjectService', () => {
         name: 'Banana Project',
         description: 'Description',
       });
- 
+
       const projects = await projectService.getAllProjects('test-user');
- 
+
       expect(projects).toHaveLength(3);
       expect(projects[0].name).toBe('Apple Project');
       expect(projects[1].name).toBe('Banana Project');
@@ -211,10 +211,10 @@ describe('ProjectService', () => {
         name: 'Project 2',
         description: 'Description',
       });
- 
+
       const user1Projects = await projectService.getAllProjects('user1');
       const user2Projects = await projectService.getAllProjects('user2');
- 
+
       expect(user1Projects).toHaveLength(1);
       expect(user2Projects).toHaveLength(1);
       expect(user1Projects[0].name).toBe('Project 1');
@@ -247,9 +247,9 @@ describe('ProjectService', () => {
         name: 'Project 5',
         description: 'Description',
       });
- 
+
       const projects = await projectService.getAllProjects('test-user', 2);
- 
+
       expect(projects).toHaveLength(2);
       expect(projects[0].name).toBe('Project 1');
       expect(projects[1].name).toBe('Project 2');
@@ -281,9 +281,9 @@ describe('ProjectService', () => {
         name: 'Project 5',
         description: 'Description',
       });
- 
+
       const projects = await projectService.getAllProjects('test-user', undefined, 2);
- 
+
       expect(projects).toHaveLength(3);
       expect(projects[0].name).toBe('Project 3');
       expect(projects[1].name).toBe('Project 4');
@@ -316,9 +316,9 @@ describe('ProjectService', () => {
         name: 'Project 5',
         description: 'Description',
       });
- 
+
       const projects = await projectService.getAllProjects('test-user', 2, 1);
- 
+
       expect(projects).toHaveLength(2);
       expect(projects[0].name).toBe('Project 2');
       expect(projects[1].name).toBe('Project 3');
@@ -331,10 +331,13 @@ describe('ProjectService', () => {
     });
 
     it('should return undefined for non-existent project', async () => {
-      const result = await projectService.updateProject({
-        id: 'project-999',
-        name: 'Updated Name',
-      }, 'test-user');
+      const result = await projectService.updateProject(
+        {
+          id: 'project-999',
+          name: 'Updated Name',
+        },
+        'test-user'
+      );
 
       expect(result).toBeUndefined();
     });
@@ -346,10 +349,13 @@ describe('ProjectService', () => {
         description: 'Description',
       });
 
-      const updated = await projectService.updateProject({
-        id: project.id,
-        name: 'Updated Name',
-      }, 'test-user');
+      const updated = await projectService.updateProject(
+        {
+          id: project.id,
+          name: 'Updated Name',
+        },
+        'test-user'
+      );
 
       expect(updated?.name).toBe('Updated Name');
       expect((await projectService.getProject(project.id, 'test-user'))?.name).toBe('Updated Name');
@@ -362,13 +368,18 @@ describe('ProjectService', () => {
         description: 'Original Description',
       });
 
-      const updated = await projectService.updateProject({
-        id: project.id,
-        description: 'Updated Description',
-      }, 'test-user');
+      const updated = await projectService.updateProject(
+        {
+          id: project.id,
+          description: 'Updated Description',
+        },
+        'test-user'
+      );
 
       expect(updated?.description).toBe('Updated Description');
-      expect((await projectService.getProject(project.id, 'test-user'))?.description).toBe('Updated Description');
+      expect((await projectService.getProject(project.id, 'test-user'))?.description).toBe(
+        'Updated Description'
+      );
     });
 
     it('should return undefined for project owned by different user', async () => {
@@ -378,10 +389,13 @@ describe('ProjectService', () => {
         description: 'Description',
       });
 
-      const result = await projectService.updateProject({
-        id: project.id,
-        name: 'Updated',
-      }, 'user2');
+      const result = await projectService.updateProject(
+        {
+          id: project.id,
+          name: 'Updated',
+        },
+        'user2'
+      );
 
       expect(result).toBeUndefined();
     });
@@ -429,14 +443,40 @@ describe('ProjectService', () => {
       const projectUuid = idMapService.getUuid(project.id, EntityType.PROJECT);
 
       // Seed todos with project assignment
-      await dataSource.query(`
+      await dataSource.query(
+        `
         INSERT INTO todos (id, username, title, priority, description, completedAt, createdAt, updatedAt, projectId)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `, [todoId1, username, 'Todo 1', 'MEDIUM', 'Description 1', null, new Date().toISOString(), new Date().toISOString(), projectUuid]);
-      await dataSource.query(`
+      `,
+        [
+          todoId1,
+          username,
+          'Todo 1',
+          'MEDIUM',
+          'Description 1',
+          null,
+          new Date().toISOString(),
+          new Date().toISOString(),
+          projectUuid,
+        ]
+      );
+      await dataSource.query(
+        `
         INSERT INTO todos (id, username, title, priority, description, completedAt, createdAt, updatedAt, projectId)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `, [todoId2, username, 'Todo 2', 'HIGH', 'Description 2', null, new Date().toISOString(), new Date().toISOString(), projectUuid]);
+      `,
+        [
+          todoId2,
+          username,
+          'Todo 2',
+          'HIGH',
+          'Description 2',
+          null,
+          new Date().toISOString(),
+          new Date().toISOString(),
+          projectUuid,
+        ]
+      );
 
       // Delete project
       await projectService.deleteProject(project.id, username);
@@ -563,18 +603,56 @@ describe('ProjectService', () => {
       // Get the project UUID for foreign key reference
       const projectUuid = idMapService.getUuid(project.id, EntityType.PROJECT);
 
-      await dataSource.query(`
+      await dataSource.query(
+        `
         INSERT INTO todos (id, username, title, priority, description, completedAt, createdAt, updatedAt, projectId)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `, [todoId1, username, 'Todo 1', 'MEDIUM', 'Description 1', null, new Date().toISOString(), new Date().toISOString(), projectUuid]);
-      await dataSource.query(`
+      `,
+        [
+          todoId1,
+          username,
+          'Todo 1',
+          'MEDIUM',
+          'Description 1',
+          null,
+          new Date().toISOString(),
+          new Date().toISOString(),
+          projectUuid,
+        ]
+      );
+      await dataSource.query(
+        `
         INSERT INTO todos (id, username, title, priority, description, completedAt, createdAt, updatedAt, projectId)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `, [todoId2, username, 'Todo 2', 'HIGH', 'Description 2', null, new Date().toISOString(), new Date().toISOString(), projectUuid]);
-      await dataSource.query(`
+      `,
+        [
+          todoId2,
+          username,
+          'Todo 2',
+          'HIGH',
+          'Description 2',
+          null,
+          new Date().toISOString(),
+          new Date().toISOString(),
+          projectUuid,
+        ]
+      );
+      await dataSource.query(
+        `
         INSERT INTO todos (id, username, title, priority, description, completedAt, createdAt, updatedAt)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `, [todoId3, username, 'Todo 3', 'LOW', 'Description 3', null, new Date().toISOString(), new Date().toISOString()]); // Not in project
+      `,
+        [
+          todoId3,
+          username,
+          'Todo 3',
+          'LOW',
+          'Description 3',
+          null,
+          new Date().toISOString(),
+          new Date().toISOString(),
+        ]
+      ); // Not in project
 
       const todos = await projectService.getTodosInProject(project.id, username);
 

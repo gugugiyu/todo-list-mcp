@@ -29,10 +29,10 @@ export class Project {
   updatedAt!: string;
 
   // Relationships
-  @ManyToOne(() => User, user => user.projects, { onDelete: 'CASCADE' })
+  @ManyToOne(() => User, (user) => user.projects, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'username' })
   user!: User;
 
-  @OneToMany(() => Todo, todo => todo.project)
+  @OneToMany(() => Todo, (todo) => todo.project)
   todos!: Todo[];
 }

@@ -21,9 +21,11 @@ A Model Context Protocol (MCP) server that provides a comprehensive API for mana
 This MCP server exposes the following tools:
 
 ### User Management
+
 1. `list-users`: List all registered users
 
 ### Todo Management
+
 2. `create-todo`: Create a new todo item (requires username)
 3. `list-todos`: List all todos for a user (requires username)
 4. `get-todo`: Get a specific todo by ID (requires username)
@@ -37,6 +39,7 @@ This MCP server exposes the following tools:
 12. ~~`summarize-active-todos`: Generate a summary of all active (non-completed) todos (requires username)~~ **(merged with list-todos)**
 
 ### Tag Management
+
 13. `create-tag`: Create a new tag with optional color (validates if tag already exists)
 14. `list-tags`: List all available tags (shared across all users)
 15. ~~`get-tag`: Get a specific tag by ID~~ (batching is by default)
@@ -50,12 +53,14 @@ This MCP server exposes the following tools:
 23. `search-todos-by-tag`: Find all todos with a specific tag
 
 ### Task Dependencies (blocked_by)
+
 24. `add-blocker-dependency`: Mark a todo as blocked by another todo (requires username)
 25. `remove-blocker-dependency`: Remove a blocker dependency (requires username)
 26. `get-blockers`: Get all todos blocking a specific todo (requires username)
 27. `get-blocked-todos`: Get all todos blocked by a specific todo (requires username)
 
 ### Project Management
+
 28. `create-project`: Create a new project (requires username, name, description)
 29. `list-projects`: List all projects for a user (requires username)
 30. `get-project`: Get a specific project by ID (requires username)
@@ -130,6 +135,7 @@ erDiagram
 ```
 
 ### Authentication & Access Control
+
 - **Username**: Required for all todo and project operations (create, list, get, update, delete, search)
 - **Automatic Registration**: Users are automatically registered when they first use the system
 - **Data Isolation**: Each user can only access their own todos and projects (cross-access returns "not found")
@@ -200,6 +206,7 @@ When using with Claude for Desktop or Cursor, you can try:
 This project uses **TypeORM** as the Object-Relational Mapping (ORM) layer with **SQLite** as the database. TypeORM provides a clean, type-safe way to interact with the database using TypeScript decorators and entity classes.
 
 ### Key Features:
+
 - **Type-safe queries**: All database operations are type-safe through TypeScript
 - **Entity-based schema**: Database tables are defined using entity classes with decorators
 - **Relationship management**: TypeORM handles complex relationships (one-to-many, many-to-many) automatically
@@ -257,6 +264,106 @@ npm run test:coverage
 ```
 
 All tests use a separate test database to avoid affecting production data.
+
+### Code Quality & Formatting
+
+This project uses several tools to maintain code quality and consistency:
+
+#### Prettier (Code Formatter)
+
+```bash
+# Check formatting
+npm run format
+
+# Format all files
+npm run format:write
+```
+
+#### ESLint (Linter)
+
+```bash
+# Run linter
+npm run lint
+
+# Fix linting issues
+npm run lint:fix
+```
+
+#### Git Hooks (Husky)
+
+The project uses Husky for git hooks to ensure code quality before commits and pushes:
+
+- **pre-commit**: Runs `lint-staged` to format and lint only changed files
+- **commit-msg**: Validates commit messages using Commitlint
+- **pre-push**: Runs full test suite before pushing
+
+#### Commit Message Format
+
+This project follows [Conventional Commits](https://www.conventionalcommits.org/) specification:
+
+```
+<type>(<scope>): <subject>
+
+<body>
+
+<footer>
+```
+
+**Types**:
+
+- `feat`: New feature
+- `fix`: Bug fix
+- `docs`: Documentation changes
+- `style`: Code style changes (formatting, etc.)
+- `refactor`: Code refactoring
+- `perf`: Performance improvements
+- `test`: Adding or updating tests
+- `chore`: Maintenance tasks
+- `ci`: CI/CD changes
+- `build`: Build system changes
+- `revert`: Revert a previous commit
+
+**Examples**:
+
+- `feat: add user authentication`
+- `fix: resolve database connection issue`
+- `docs: update README with new features`
+
+## CI/CD
+
+This project uses GitHub Actions for continuous integration and continuous deployment. The workflow runs on self-hosted runners.
+
+### Workflow Triggers
+
+- **Pull requests** to `main` branch
+- **Push** to `main` branch
+
+### Jobs
+
+#### 1. Lint & Format Check
+
+- Runs ESLint to check for code quality issues
+- Checks code formatting with Prettier
+
+#### 2. Test Suite
+
+- Runs all unit tests with coverage
+- Uploads coverage reports as artifacts
+
+#### 3. Build
+
+- Compiles TypeScript code
+- Verifies build output
+
+#### 4. Release (on push to main only)
+
+- Runs full test suite
+- Creates a new GitHub release with version tag
+- Uses package version from `package.json`
+
+### Workflow File
+
+The CI/CD workflow is defined in [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
 
 ## License
 

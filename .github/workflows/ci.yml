@@ -1,0 +1,132 @@
+name: CI/CD Pipeline
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+
+jobs:
+  lint-and-format:
+    name: Lint & Format Check
+    runs-on: self-hosted
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run ESLint
+        run: npm run lint
+
+      - name: Check formatting
+        run: npm run format
+
+  test:
+    name: Test Suite
+    runs-on: self-hosted
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run unit tests with coverage
+        run: npm run test:unit:coverage
+
+      - name: Upload results to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+  build:
+    name: Build
+    runs-on: self-hosted
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build project
+        run: npm run build
+
+      - name: Verify build output
+        run: |
+          if [ ! -d "dist" ]; then
+            echo "Build failed: dist directory not found"
+            exit 1
+          fi
+          echo "Build successful: dist directory exists"
+
+  release:
+    name: Create Release
+    runs-on: self-hosted
+    needs: [lint-and-format, test, build]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm run test:unit
+
+      - name: Get package version
+        id: version
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Package version: $VERSION"
+
+      - name: Create GitHub Release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          release_name: Release v${{ steps.version.outputs.version }}
+          body: |
+            ## Changes in this release
+
+            This release includes the latest changes from the main branch.
+
+            ### What's Changed
+            - See the commit history for detailed changes
+          draft: false
+          prerelease: false

@@ -138,7 +138,7 @@ class TodoService {
 
     const todo = await todoRepo.findOne({
       where: { id: uuid },
-      relations: ['tags', 'blockers', 'project']
+      relations: ['tags', 'blockers', 'project'],
     });
 
     if (!todo) return undefined;
@@ -178,7 +178,13 @@ class TodoService {
    * @param isCompleted Optional filter for completion status (true=completed, false=active, undefined=all)
    * @returns Array of Todos
    */
-  async getAllTodos(username: string, useRelativeTime: boolean, limit: number, offset: number, isCompleted?: boolean): Promise<Todo[]> {
+  async getAllTodos(
+    username: string,
+    useRelativeTime: boolean,
+    limit: number,
+    offset: number,
+    isCompleted?: boolean
+  ): Promise<Todo[]> {
     // Get or create the user (automatic registration)
     const user = await this.userSvc.getOrCreateUser(username);
 
@@ -198,7 +204,7 @@ class TodoService {
     });
 
     // Convert each database row to a Todo object and populate blocked_by, tagNames, and projectName
-    return todos.map(todo => {
+    return todos.map((todo) => {
       const result = this.entityToTodo(todo, useRelativeTime);
       result.blocked_by = this.getBlockerIds(result.id);
       result.tagNames = todo.tags.map((tag: any) => tag.name);
@@ -231,7 +237,7 @@ class TodoService {
     });
 
     // Convert each database row to a Todo object and populate blocked_by, tagNames, and projectName
-    return todos.map(todo => {
+    return todos.map((todo) => {
       const result = this.entityToTodo(todo);
       result.blocked_by = this.getBlockerIds(result.id);
       result.tagNames = todo.tags.map((tag: any) => tag.name);
@@ -253,7 +259,10 @@ class TodoService {
    * @param data The update data (id required, title/description optional)
    * @returns The updated Todo if found, undefined otherwise
    */
-  async updateTodo(data: z.infer<typeof UpdateTodoSchema>, username: string): Promise<Todo | undefined> {
+  async updateTodo(
+    data: z.infer<typeof UpdateTodoSchema>,
+    username: string
+  ): Promise<Todo | undefined> {
     // First check if the todo exists and belongs to the user
     const todo = await this.getTodo(data.id, username);
     if (!todo) return undefined;
@@ -300,10 +309,7 @@ class TodoService {
     const todoRepo = this.dbService.getTodoRepository();
     const uuid = this.idMap.getUuid(id, EntityType.TODO);
 
-    await todoRepo.update(
-      { id: uuid },
-      { completedAt: now, updatedAt: now }
-    );
+    await todoRepo.update({ id: uuid }, { completedAt: now, updatedAt: now });
 
     // Return the updated todo
     return this.getTodo(id, username);
@@ -361,7 +367,7 @@ class TodoService {
       relations: ['tags', 'blockers', 'project'],
     });
 
-    return todos.map(todo => {
+    return todos.map((todo) => {
       const result = this.entityToTodo(todo);
       result.blocked_by = this.getBlockerIds(result.id);
       result.tagNames = todo.tags.map((tag: any) => tag.name);
@@ -398,7 +404,7 @@ class TodoService {
       relations: ['tags', 'blockers', 'project'],
     });
 
-    return todos.map(todo => {
+    return todos.map((todo) => {
       const result = this.entityToTodo(todo);
       result.blocked_by = this.getBlockerIds(result.id);
       result.tagNames = todo.tags.map((tag: any) => tag.name);
@@ -432,7 +438,7 @@ class TodoService {
       relations: ['tags', 'blockers', 'project'],
     });
 
-    return todos.map(todo => {
+    return todos.map((todo) => {
       const result = this.entityToTodo(todo);
       result.blocked_by = this.getBlockerIds(result.id);
       result.tagNames = todo.tags.map((tag: any) => tag.name);
@@ -460,11 +466,11 @@ class TodoService {
 
     // Handle the case when there are no active todos
     if (activeTodos.length === 0) {
-      return "No active todos found.";
+      return 'No active todos found.';
     }
 
     // Create a bulleted list of todo titles
-    const summary = activeTodos.map(todo => `- ${todo.title}`).join('\n');
+    const summary = activeTodos.map((todo) => `- ${todo.title}`).join('\n');
     return `# Active Todos Summary\n\nThere are ${activeTodos.length} active todos:\n\n${summary}`;
   }
 
@@ -496,7 +502,9 @@ class TodoService {
       completed: entity.completedAt !== null,
       blocked_by: [],
       tagNames: [],
-      projectId: entity.projectId ? this.idMap.getHumanReadableId(entity.projectId, EntityType.PROJECT) : null,
+      projectId: entity.projectId
+        ? this.idMap.getHumanReadableId(entity.projectId, EntityType.PROJECT)
+        : null,
       projectName: null, // Will be populated by getTodo/getAllTodos methods
       createdAt: useRelativeTime ? formatRelativeTime(entity.createdAt) : entity.createdAt,
       updatedAt: useRelativeTime ? formatRelativeTime(entity.updatedAt) : entity.updatedAt,
@@ -512,18 +520,22 @@ class TodoService {
    * @param blockerTodoId The task-* ID of the todo that blocks it
    * @returns true if the dependency was created, false if it already exists
    */
-  async addBlockerDependency(blockedTodoId: string, blockerTodoId: string, username: string): Promise<boolean> {
+  async addBlockerDependency(
+    blockedTodoId: string,
+    blockerTodoId: string,
+    username: string
+  ): Promise<boolean> {
     // Verify both todos belong to the user
     const blockedTodo = await this.getTodo(blockedTodoId, username);
     const blockerTodo = await this.getTodo(blockerTodoId, username);
 
     if (!blockedTodo || !blockerTodo) {
-      throw new Error("One or both todos not found");
+      throw new Error('One or both todos not found');
     }
 
     // Prevent self-blocking
     if (blockedTodoId === blockerTodoId) {
-      throw new Error("A todo cannot be blocked by itself");
+      throw new Error('A todo cannot be blocked by itself');
     }
 
     const todoRepo = this.dbService.getTodoRepository();
@@ -534,7 +546,10 @@ class TodoService {
       return false;
     }
 
-    const blockedEntity = await todoRepo.findOne({ where: { id: blockedUuid }, relations: ['blockers'] });
+    const blockedEntity = await todoRepo.findOne({
+      where: { id: blockedUuid },
+      relations: ['blockers'],
+    });
     if (!blockedEntity) return false;
 
     // Check if dependency already exists
@@ -557,7 +572,11 @@ class TodoService {
    * @param blockerTodoId The task-* ID of the todo that blocks it
    * @returns true if the dependency was deleted, false if not found
    */
-  async removeBlockerDependency(blockedTodoId: string, blockerTodoId: string, username: string): Promise<boolean> {
+  async removeBlockerDependency(
+    blockedTodoId: string,
+    blockerTodoId: string,
+    username: string
+  ): Promise<boolean> {
     // Verify both todos belong to the user
     const blockedTodo = await this.getTodo(blockedTodoId, username);
     const blockerTodo = await this.getTodo(blockerTodoId, username);
@@ -574,7 +593,10 @@ class TodoService {
       return false;
     }
 
-    const blockedEntity = await todoRepo.findOne({ where: { id: blockedUuid }, relations: ['blockers'] });
+    const blockedEntity = await todoRepo.findOne({
+      where: { id: blockedUuid },
+      relations: ['blockers'],
+    });
     if (!blockedEntity) return false;
 
     if (!blockedEntity.blockers) return false;
@@ -611,7 +633,7 @@ class TodoService {
       },
     });
 
-    return blockers.map(blocker => {
+    return blockers.map((blocker) => {
       const result = this.entityToTodo(blocker);
       result.tagNames = blocker.tags?.map((tag: any) => tag.name) || [];
       if (blocker.project) {
@@ -648,7 +670,7 @@ class TodoService {
     });
 
     // Convert UUIDs back to task-* format
-    return blockedTodos.map(blocked => {
+    return blockedTodos.map((blocked) => {
       return this.idMap.getHumanReadableId(blocked.id, EntityType.TODO);
     });
   }
@@ -733,7 +755,7 @@ class TodoService {
       order: { createdAt: 'DESC' },
     });
 
-    return todos.map(todo => {
+    return todos.map((todo) => {
       const result = this.entityToTodo(todo);
       result.blocked_by = this.getBlockerIds(result.id);
       result.tagNames = todo.tags.map((tag: any) => tag.name);
@@ -768,10 +790,7 @@ class TodoService {
 
     if (!todoUuid || !projectUuid) return false;
 
-    const result = await todoRepo.update(
-      { id: todoUuid },
-      { projectId: projectUuid }
-    );
+    const result = await todoRepo.update({ id: todoUuid }, { projectId: projectUuid });
 
     return (result.affected || 0) > 0;
   }
@@ -794,10 +813,7 @@ class TodoService {
     const todoUuid = this.idMap.getUuid(todoId, EntityType.TODO);
     if (!todoUuid) return false;
 
-    const result = await todoRepo.update(
-      { id: todoUuid },
-      { projectId: null }
-    );
+    const result = await todoRepo.update({ id: todoUuid }, { projectId: null });
 
     return (result.affected || 0) > 0;
   }
