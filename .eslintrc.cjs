@@ -23,11 +23,5 @@ module.exports = {
     node: true,
     es2022: true,
   },
-  ignorePatterns: [
-    'dist/',
-    'node_modules/',
-    'coverage/',
-    '*.config.js',
-    '*.config.cjs',
-  ],
+  ignorePatterns: ['dist/', 'node_modules/', 'coverage/', '*.config.js', '*.config.cjs'],
 };
