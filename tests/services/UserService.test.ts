@@ -45,7 +45,7 @@ describe('UserService', () => {
       const secondUser = await userService.getOrCreateUser('jane-smith');
 
       expect(firstUser.username).toBe(secondUser.username);
-      expect(firstUser.createdAt).toBe(secondUser.createdAt);
+      expect(new Date(firstUser.createdAt)).toStrictEqual(secondUser.createdAt);
     });
 
     it('should normalize username to lowercase', async () => {
