@@ -1,15 +1,15 @@
 /**
  * TagService.ts
- * 
- * This service implements the core business logic for managing tags.
+ *
+ * This service implements the core business logic for managing tags using TypeORM.
  * It acts as an intermediary between the data model and the database,
  * handling all CRUD operations for tags and managing tag-todo relationships.
  */
 import { Tag, createTag, CreateTagSchema, UpdateTagSchema } from '../models/Tag.js';
 import { z } from 'zod';
-import Database from 'better-sqlite3';
-import { databaseService } from './DatabaseService.js';
+import { DatabaseService, databaseService } from './DatabaseService.js';
 import { IdMapService, EntityType, idMapService } from './IdMapService.js';
+import { Like, In } from 'typeorm';
 
 /**
  * TagService Class
@@ -19,21 +19,13 @@ import { IdMapService, EntityType, idMapService } from './IdMapService.js';
  * operations and business logic in one place.
  */
 class TagService {
-  private db: Database.Database;
   private idMap: IdMapService;
+  private dbService: DatabaseService;
 
-  constructor(db?: Database.Database, idMap?: IdMapService) {
+  constructor(idMap?: IdMapService, dbService?: DatabaseService) {
     // Allow dependency injection for testing
-    this.db = db || databaseService.getDb();
     this.idMap = idMap || idMapService;
-  }
-
-  /**
-   * Get the database instance
-   * Useful for testing to verify database state
-   */
-  getDb(): Database.Database {
-    return this.db;
+    this.dbService = dbService || databaseService;
   }
 
   /**
@@ -43,76 +35,68 @@ class TagService {
   getIdMap(): IdMapService {
     return this.idMap;
   }
+
   /**
    * Create a new tag
-   * 
+   *
    * This method:
    * 1. Uses the factory function to create a new Tag object
    * 2. Persists it to the database
    * 3. Registers the ID mapping
    * 4. Returns the created Tag
-   * 
+   *
    * @param data Validated input data (name and optional color)
    * @returns The newly created Tag
    * @throws Error if tag name already exists
    */
-  createTag(data: z.infer<typeof CreateTagSchema>): Tag {
+  async createTag(data: z.infer<typeof CreateTagSchema>): Promise<Tag> {
     // Validate input data
     const validatedData = CreateTagSchema.parse(data);
-    
+
     // Check if a tag with the same name already exists (case-insensitive)
-    const existingTag = this.getTagByName(validatedData.name);
+    const existingTag = await this.getTagByName(validatedData.name);
     if (existingTag) {
       throw new Error(`Tag with name "${validatedData.name}" already exists`);
     }
-    
+
     // Use the factory function to create a Tag with proper defaults
     const tag = createTag(validatedData);
-    
-    // Get the database instance
-    const db = this.db;
-    
-    // Prepare the SQL statement for inserting a new tag
-    const stmt = db.prepare(`
-      INSERT INTO tags (id, name, color, createdAt, updatedAt)
-      VALUES (?, ?, ?, ?, ?)
-    `);
-    
-    // Execute the statement with the tag's data
-    stmt.run(
-      tag.id,
-      tag.name,
-      tag.color || null,
-      tag.createdAt,
-      tag.updatedAt
-    );
-    
+
+    const tagRepo = this.dbService.getTagRepository();
+
+    const newTag = tagRepo.create({
+      id: tag.id,
+      name: tag.name,
+      color: tag.color || null,
+      createdAt: tag.createdAt,
+      updatedAt: tag.updatedAt,
+    });
+
+    await tagRepo.save(newTag);
+
     // Register the human-readable ID mapping
     const humanReadableId = this.idMap.getHumanReadableId(tag.id, EntityType.TAG);
-    
+
     // Update the tag's id to use the human-readable version
     tag.id = humanReadableId;
-    
+
     // Return the created tag
     return tag;
   }
 
   /**
    * Get a tag by ID
-   * 
+   *
    * This method:
    * 1. Queries the database for a tag with the given ID (can be UUID or human-readable tag-*)
    * 2. Converts the database row to a Tag object if found
-   * 
+   *
    * @param id The tag ID (UUID or human-readable tag-*)
    * @returns The Tag if found, undefined otherwise
    */
-  getTag(id: string): Tag | undefined {
-    const db = this.db;
-    
-    // Use parameterized query to prevent SQL injection
-    const stmt = db.prepare('SELECT * FROM tags WHERE id = ?');
-    
+  async getTag(id: string): Promise<Tag | undefined> {
+    const tagRepo = this.dbService.getTagRepository();
+
     // Check if this is a human-readable ID, if so convert to UUID
     let uuid = id;
     if (id.startsWith('tag-')) {
@@ -120,29 +104,29 @@ class TagService {
       if (!resolvedUuid) return undefined;
       uuid = resolvedUuid;
     }
-    
-    const row = stmt.get(uuid) as any;
 
-    // Return undefined if no tag was found
-    if (!row) return undefined;
-    
+    const tag = await tagRepo.findOne({ where: { id: uuid } });
+
+    if (!tag) return undefined;
+
     // Convert the database row to a Tag object
-    return this.rowToTag(row);
+    return this.entityToTag(tag);
   }
 
   /**
    * Get a tag by name
-   * 
+   *
    * @param name The name of the tag to retrieve
    * @returns The Tag if found, undefined otherwise
    */
-  getTagByName(name: string): Tag | undefined {
-    const db = this.db;
-    const stmt = db.prepare('SELECT * FROM tags WHERE name = ? COLLATE NOCASE');
-    const row = stmt.get(name) as any;
+  async getTagByName(name: string): Promise<Tag | undefined> {
+    const tagRepo = this.dbService.getTagRepository();
+    const tag = await tagRepo.findOne({
+      where: { name: name }
+    });
 
-    if (!row) return undefined;
-    return this.rowToTag(row);
+    if (!tag) return undefined;
+    return this.entityToTag(tag);
   }
 
   /**
@@ -154,31 +138,25 @@ class TagService {
    * @param offset Number of tags to skip (default: 0)
    * @returns Array of Tags
    */
-  getAllTags(limit?: number, offset?: number): Tag[] {
-    const db = this.db;
-    let query = 'SELECT * FROM tags ORDER BY name';
-    const params: any[] = [];
-    
+  async getAllTags(limit?: number, offset?: number): Promise<Tag[]> {
+    const tagRepo = this.dbService.getTagRepository();
+
+    const findOptions: any = {
+      order: { name: 'ASC' }
+    };
+
     // Add pagination if specified
-    // SQLite requires LIMIT when using OFFSET, so we use a large number if limit is not specified
     if (limit !== undefined) {
-      query += ' LIMIT ?';
-      params.push(limit);
-    } else if (offset !== undefined) {
-      // If offset is provided without limit, use a very large limit
-      query += ' LIMIT ?';
-      params.push(2147483647); // Maximum SQLite integer
+      findOptions.take = limit;
     }
     if (offset !== undefined) {
-      query += ' OFFSET ?';
-      params.push(offset);
+      findOptions.skip = offset;
     }
-    
-    const stmt = db.prepare(query);
-    const rows = stmt.all(...params) as any[];
-    
+
+    const tags = await tagRepo.find(findOptions);
+
     // Convert each database row to a Tag object
-    return rows.map(row => this.rowToTag(row));
+    return tags.map(tag => this.entityToTag(tag));
   }
 
   /**
@@ -189,13 +167,13 @@ class TagService {
    * @param ids Array of tag IDs (UUID or human-readable tag-*)
    * @returns Array of Tags that were found (may be fewer than input if some don't exist)
    */
-  getTags(ids: string[]): Tag[] {
+  async getTags(ids: string[]): Promise<Tag[]> {
     if (ids.length === 0) {
       return [];
     }
 
-    const db = this.db;
-    
+    const tagRepo = this.dbService.getTagRepository();
+
     // Resolve all human-readable IDs to UUIDs
     const resolvedIds = ids.map(id => {
       if (id.startsWith('tag-')) {
@@ -204,18 +182,37 @@ class TagService {
       }
       return id;
     }).filter((uuid): uuid is string => uuid !== undefined);
-    
+
     if (resolvedIds.length === 0) {
       return [];
     }
+
+    const tags = await tagRepo.find({
+      where: { id: In([...resolvedIds]) }
+    });
+
+    // Convert each database row to a Tag object and preserve input order
+    // Create a map from UUID to Tag (database uses UUIDs)
+    const tagMap = new Map<string, Tag>();
+    tags.forEach((tag: any) => {
+      const entityTag = this.entityToTag(tag);
+      tagMap.set(tag.id, entityTag);
+    });
     
-    // Build a parameterized query with placeholders for each ID
-    const placeholders = resolvedIds.map(() => '?').join(',');
-    const stmt = db.prepare(`SELECT * FROM tags WHERE id IN (${placeholders}) ORDER BY name`);
-    const rows = stmt.all(...resolvedIds) as any[];
-    
-    // Convert each database row to a Tag object
-    return rows.map(row => this.rowToTag(row));
+    // Map input IDs to UUIDs for lookup
+    const orderedTags: Tag[] = [];
+    for (const id of ids) {
+      let uuid = id;
+      if (id.startsWith('tag-')) {
+        const resolvedUuid = this.idMap.getUuid(id, EntityType.TAG);
+        if (resolvedUuid) {
+          uuid = resolvedUuid;
+        }
+      }
+      const tag = tagMap.get(uuid);
+      if (tag) orderedTags.push(tag);
+    }
+    return orderedTags;
   }
 
   /**
@@ -229,7 +226,7 @@ class TagService {
    * @param data The update data (id required, name/color optional)
    * @returns The updated Tag if found, undefined otherwise
    */
-  updateTag(data: z.infer<typeof UpdateTagSchema>): Tag | undefined {
+  async updateTag(data: z.infer<typeof UpdateTagSchema>): Promise<Tag | undefined> {
     // Resolve human-readable ID to UUID if needed
     let uuid = data.id;
     if (data.id.startsWith('tag-')) {
@@ -237,32 +234,27 @@ class TagService {
       if (!resolvedUuid) return undefined;
       uuid = resolvedUuid;
     }
-    
+
     // First check if the tag exists
-    const tag = this.getTag(data.id);
+    const tag = await this.getTag(data.id);
     if (!tag) return undefined;
 
     // Create a timestamp for the update
     const updatedAt = new Date().toISOString();
-    
-    const db = this.db;
-    
+
+    const tagRepo = this.dbService.getTagRepository();
+
     try {
-      const stmt = db.prepare(`
-        UPDATE tags
-        SET name = ?, color = ?, updatedAt = ?
-        WHERE id = ?
-      `);
-      
-      // Update with new values or keep existing ones if not provided
-      stmt.run(
-        data.name || tag.name,
-        data.color || tag.color || null,
-        updatedAt,
-        uuid
+      await tagRepo.update(
+        { id: uuid },
+        {
+          name: data.name || tag.name,
+          color: data.color || tag.color || null,
+          updatedAt,
+        }
       );
     } catch (error: any) {
-      if (error.message.includes('UNIQUE constraint failed')) {
+      if (error.message && error.message.includes('UNIQUE constraint failed')) {
         throw new Error(`Tag with name "${data.name}" already exists`);
       }
       throw error;
@@ -274,17 +266,17 @@ class TagService {
 
   /**
    * Delete a tag
-   * 
+   *
    * This method removes a tag from the database permanently.
    * Associated relationships in the todo_tags table are automatically deleted
    * due to the CASCADE constraint.
-   * 
+   *
    * @param id The tag ID (UUID or human-readable tag-*)
    * @returns true if deleted, false if not found or not deleted
    */
-  deleteTag(id: string): boolean {
-    const db = this.db;
-    
+  async deleteTag(id: string): Promise<boolean> {
+    const tagRepo = this.dbService.getTagRepository();
+
     // Resolve human-readable ID to UUID if needed
     let uuid = id;
     if (id.startsWith('tag-')) {
@@ -292,39 +284,39 @@ class TagService {
       if (!resolvedUuid) return false;
       uuid = resolvedUuid;
     }
-    
-    const stmt = db.prepare('DELETE FROM tags WHERE id = ?');
-    const result = stmt.run(uuid);
-    
+
+    const result = await tagRepo.delete({ id: uuid });
+
     // Unregister the mapping if deletion was successful
-    if (result.changes > 0 && id.startsWith('tag-')) {
+    if (result.affected && result.affected > 0 && id.startsWith('tag-')) {
       this.idMap.unregisterMapping(id, uuid, EntityType.TAG);
     }
 
     // Check if any rows were affected
-    return result.changes > 0;
+    return (result.affected || 0) > 0;
   }
 
   /**
    * Search tags by name
-   * 
+   *
    * This method performs a case-insensitive partial match search
    * on tag names.
-   * 
+   *
    * @param name The search term to look for in tag names
    * @returns Array of matching Tags
    */
-  searchTags(name: string): Tag[] {
+  async searchTags(name: string): Promise<Tag[]> {
     // Add wildcards to the search term for partial matching
     const searchTerm = `%${name}%`;
-    
-    const db = this.db;
-    
-    // COLLATE NOCASE makes the search case-insensitive
-    const stmt = db.prepare('SELECT * FROM tags WHERE name COLLATE NOCASE LIKE ? ORDER BY name');
-    const rows = stmt.all(searchTerm) as any[];
-    
-    return rows.map(row => this.rowToTag(row));
+
+    const tagRepo = this.dbService.getTagRepository();
+
+    const tags = await tagRepo.find({
+      where: { name: Like(searchTerm) },
+      order: { name: 'ASC' }
+    });
+
+    return tags.map(tag => this.entityToTag(tag));
   }
 
   /**
@@ -338,9 +330,10 @@ class TagService {
    * @param tagId The tag-* ID (human-readable) or UUID of the tag
    * @returns true if the relationship was created, false if it already existed
    */
-  addTagToTodo(todoId: string, tagId: string): boolean {
-    const db = this.db;
-    
+  async addTagToTodo(todoId: string, tagId: string): Promise<boolean> {
+    const todoRepo = this.dbService.getTodoRepository();
+    const tagRepo = this.dbService.getTagRepository();
+
     // Resolve human-readable IDs to UUIDs if needed
     let tagUuid = tagId;
     if (tagId.startsWith('tag-')) {
@@ -350,30 +343,42 @@ class TagService {
       }
       tagUuid = resolvedUuid;
     }
-    
+
     const todoUuid = this.idMap.getUuid(todoId, EntityType.TODO);
     if (!todoUuid) {
       throw new Error(`Todo with ID ${todoId} not found`);
     }
 
     // Check current tag count before adding (max 4 tags per todo)
-    const currentTags = this.getTagsForTodo(todoId);
+    const currentTags = await this.getTagsForTodo(todoId);
     if (currentTags.length >= 4) {
       throw new Error("Maximum of 4 tags allowed per todo");
     }
-    
+
     try {
-      const stmt = db.prepare(`
-        INSERT INTO todo_tags (todo_id, tag_id, createdAt)
-        VALUES (?, ?, ?)
-      `);
-      
-      const now = new Date().toISOString();
-      const result = stmt.run(todoUuid, tagUuid, now);
-      return result.changes > 0;
+      const todo = await todoRepo.findOne({
+        where: { id: todoUuid },
+        relations: ['tags']
+      });
+
+      if (!todo) {
+        return false;
+      }
+
+      // Check if tag already exists on todo
+      const existingTag = todo.tags?.find((t: any) => t.id === tagUuid);
+      if (existingTag) {
+        return false;
+      }
+
+      todo.tags = todo.tags || [];
+      todo.tags.push({ id: tagUuid } as any);
+
+      await todoRepo.save(todo);
+      return true;
     } catch (error: any) {
       // If it's a constraint error, the relationship already exists
-      if (error.message.includes('UNIQUE constraint failed')) {
+      if (error.message && error.message.includes('UNIQUE constraint failed')) {
         return false;
       }
       throw error;
@@ -387,9 +392,9 @@ class TagService {
    * @param tagId The tag-* ID (human-readable) or UUID of the tag
    * @returns true if the relationship was deleted, false if not found
    */
-  removeTagFromTodo(todoId: string, tagId: string): boolean {
-    const db = this.db;
-    
+  async removeTagFromTodo(todoId: string, tagId: string): Promise<boolean> {
+    const todoRepo = this.dbService.getTodoRepository();
+
     // Resolve human-readable IDs to UUIDs if needed
     let tagUuid = tagId;
     if (tagId.startsWith('tag-')) {
@@ -399,15 +404,25 @@ class TagService {
       }
       tagUuid = resolvedUuid;
     }
-    
+
     const todoUuid = this.idMap.getUuid(todoId, EntityType.TODO);
     if (!todoUuid) {
       return false; // Todo not found, return false
     }
-    
-    const stmt = db.prepare('DELETE FROM todo_tags WHERE todo_id = ? AND tag_id = ?');
-    const result = stmt.run(todoUuid, tagUuid);
-    return result.changes > 0;
+
+    const todo = await todoRepo.findOne({
+      where: { id: todoUuid },
+      relations: ['tags']
+    });
+
+    if (!todo) return false;
+
+    if (!todo.tags) return false;
+
+    todo.tags = todo.tags.filter((t: any) => t.id !== tagUuid);
+    await todoRepo.save(todo);
+
+    return true;
   }
 
   /**
@@ -416,24 +431,25 @@ class TagService {
    * @param todoId The task-* ID of the todo
    * @returns Array of Tags associated with the todo
    */
-  getTagsForTodo(todoId: string): Tag[] {
-    const db = this.db;
-    
+  async getTagsForTodo(todoId: string): Promise<Tag[]> {
+    const todoRepo = this.dbService.getTodoRepository();
+
     // Resolve human-readable ID to UUID if needed
     const todoUuid = this.idMap.getUuid(todoId, EntityType.TODO);
     if (!todoUuid) {
       return [];
     }
-    
-    const stmt = db.prepare(`
-      SELECT t.* FROM tags t
-      INNER JOIN todo_tags tt ON t.id = tt.tag_id
-      WHERE tt.todo_id = ?
-      ORDER BY t.name
-    `);
-    const rows = stmt.all(todoUuid) as any[];
-    
-    return rows.map(row => this.rowToTag(row));
+
+    const todo = await todoRepo.findOne({
+      where: { id: todoUuid },
+      relations: ['tags']
+    });
+
+    if (!todo) return [];
+
+    // Sort tags by name to ensure consistent ordering
+    const tags = (todo.tags || []).map((tag: any) => this.entityToTag(tag));
+    return tags.sort((a: Tag, b: Tag) => a.name.localeCompare(b.name));
   }
 
   /**
@@ -442,9 +458,9 @@ class TagService {
    * @param tagId The tag-* ID (human-readable) or UUID of the tag
    * @returns Array of todo IDs (task-*) that have this tag
    */
-  getTodosWithTag(tagId: string): string[] {
-    const db = this.db;
-    
+  async getTodosWithTag(tagId: string): Promise<string[]> {
+    const tagRepo = this.dbService.getTagRepository();
+
     // Resolve human-readable ID to UUID if needed
     let uuid = tagId;
     if (tagId.startsWith('tag-')) {
@@ -454,15 +470,16 @@ class TagService {
       }
       uuid = resolvedUuid;
     }
-    
-    const stmt = db.prepare(`
-      SELECT todo_id FROM todo_tags
-      WHERE tag_id = ?
-      ORDER BY todo_id
-    `);
-    const rows = stmt.all(uuid) as any[];
-    
-    return rows.map(row => row.todo_id);
+
+    const tag = await tagRepo.findOne({
+      where: { id: uuid },
+      relations: ['todos']
+    });
+
+    if (!tag) return [];
+
+    // Return UUIDs instead of human-readable IDs
+    return (tag.todos || []).map((todo: any) => todo.id);
   }
 
   /**
@@ -473,11 +490,23 @@ class TagService {
    * @param todoId The task-* ID of the todo
    * @returns number of relationships deleted
    */
-  removeAllTagsFromTodo(todoId: string): number {
-    const db = this.db;
-    const stmt = db.prepare('DELETE FROM todo_tags WHERE todo_id = ?');
-    const result = stmt.run(todoId);
-    return result.changes;
+  async removeAllTagsFromTodo(todoId: string): Promise<number> {
+    const todoRepo = this.dbService.getTodoRepository();
+    const todoUuid = this.idMap.getUuid(todoId, EntityType.TODO);
+    if (!todoUuid) return 0;
+
+    const todo = await todoRepo.findOne({
+      where: { id: todoUuid },
+      relations: ['tags']
+    });
+
+    if (!todo) return 0;
+
+    const count = todo.tags?.length || 0;
+    todo.tags = [];
+    await todoRepo.save(todo);
+
+    return count;
   }
 
   /**
@@ -489,31 +518,32 @@ class TagService {
    * @param ids Array of tag IDs (UUID or human-readable tag-*)
    * @returns Array of tag names (may be fewer than input if some don't exist)
    */
-  getTagNames(ids: string[]): string[] {
+  async getTagNames(ids: string[]): Promise<string[]> {
     if (ids.length === 0) {
       return [];
     }
 
-    const tags = this.getTags(ids);
+    const tags = await this.getTags(ids);
+    // Preserve input order
     return tags.map(tag => tag.name);
   }
 
   /**
-   * Helper to convert a database row to a Tag object
-   * 
+   * Helper to convert a database entity to a Tag object
+   *
    * Uses IdMapService to get human-readable ID mapping.
-   * 
-   * @param row The database row data
+   *
+   * @param entity The database entity data
    * @returns A properly formatted Tag object
    */
-  private rowToTag(row: any): Tag {
-    const humanReadableId = this.idMap.getHumanReadableId(row.id, EntityType.TAG);
+  private entityToTag(entity: any): Tag {
+    const humanReadableId = this.idMap.getHumanReadableId(entity.id, EntityType.TAG);
     return {
       id: humanReadableId,
-      name: row.name,
-      color: row.color,
-      createdAt: row.createdAt,
-      updatedAt: row.updatedAt
+      name: entity.name,
+      color: entity.color,
+      createdAt: entity.createdAt,
+      updatedAt: entity.updatedAt
     };
   }
 }
