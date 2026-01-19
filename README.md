@@ -1,3 +1,4 @@
+![Codecov](https://img.shields.io/codecov/c/github/gugugiyu/todo-list-mcp)
 # Todo List MCP Server
 
 A Model Context Protocol (MCP) server that provides a comprehensive API for managing todo items. This is the fork that expands on lots of features. Focusing mainly on more efficient context management while still maintaining the required features of a task management platform.
