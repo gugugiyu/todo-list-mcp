@@ -108,6 +108,13 @@ async function safeExecute<T>(
   }
 }
 
+// Graceful shutdown handler
+const shutdown = async () => {
+  console.error('Shutting down MCP server...');
+  await server.close(); // Closes the server and transport
+  process.exit(0);
+};
+
 /**
  * Tool 1: Create a new todo
  *
@@ -1347,6 +1354,10 @@ async function main() {
     process.exit(1);
   }
 }
+
+// Handling sigterm + sigint
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);
 
 // Start the server
 main();
