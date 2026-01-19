@@ -68,50 +68,66 @@ This MCP server exposes the following tools:
 
 ## Data Model
 
-### User Item
-Each user contains:
-- `username`: Unique username (3-12 characters, alphanumeric + hyphens only, case-insensitive)
-- `createdAt`: ISO timestamp of registration
+```mermaid
+erDiagram
+    USER {
+        string username PK "3–12 chars, case-insensitive"
+        string createdAt "ISO timestamp"
+    }
 
-### Todo Item
-Each todo item contains:
-- `id`: Unique task identifier (format: `task-*`, LLM-friendly mapping to UUID)
-- `username`: The user who owns this todo
-- `title`: Task title
-- `description`: Markdown-formatted description
-- `priority`: Priority level (URGENT, HIGH, MEDIUM, LOW, LOWEST)
-- `completed`: Boolean completion status
-- `completedAt`: ISO timestamp when completed (null if not completed)
-- `blocked_by`: Array of task-* IDs that block this todo (task dependencies)
-- `tagNames`: Array of tag names for display (max 4 tags)
-- `projectId`: Reference to project (project-*) if assigned, null otherwise
-- `projectName`: Project name for display
-- `createdAt`: ISO timestamp of creation
-- `updatedAt`: ISO timestamp of last update
+    PROJECT {
+        string id PK "project-*"
+        string username FK
+        string name
+        string description
+        string createdAt
+        string updatedAt
+    }
 
-### Tag Item
-Each tag contains:
-- `id`: Unique UUID identifier (format: `tag-*`, LLM-friendly mapping to UUID)
-- `name`: Tag name (unique, case-insensitive)
-- `color`: Optional hex color code (format: #RRGGBB)
-- `createdAt`: ISO timestamp of creation
-- `updatedAt`: ISO timestamp of last update
+    TODO {
+        string id PK "task-*"
+        string username FK
+        string title
+        string description "markdown"
+        string priority
+        boolean completed
+        string completedAt
+        string projectId FK
+        string projectName
+        string createdAt
+        string updatedAt
+    }
 
-### Project Item
-Each project contains:
-- `id`: Unique project identifier (format: `project-*`, LLM-friendly mapping to UUID)
-- `username`: The user who owns this project
-- `name`: Project name (required)
-- `description`: Project description (required)
-- `createdAt`: ISO timestamp of creation
-- `updatedAt`: ISO timestamp of last update
+    TAG {
+        string id PK "tag-*"
+        string name "unique, case-insensitive"
+        string color
+        string createdAt
+        string updatedAt
+    }
 
-### Relationships
-- **User → Project**: 1-N relationship (each user has their own projects)
-- **User → Todo**: 1-N relationship (each user has their own todos)
-- **Project → Todo**: 1-N relationship (each project can have many todos, each todo belongs to at most one project)
-- **Todo ↔ Tag**: N-N relationship (many todos can have many tags, tags are shared globally, max 4 tags per todo)
-- **Todo → Todo (blocked_by)**: A todo can be blocked by one or more other todos, creating a directed dependency graph
+    TODO_TAG {
+        string todoId FK
+        string tagId FK
+    }
+
+    TODO_DEPENDENCY {
+        string todoId FK "blocked todo"
+        string blockedByTodoId FK "blocking todo"
+    }
+
+    %% Relationships
+    USER ||--o{ PROJECT : owns
+    USER ||--o{ TODO : owns
+
+    PROJECT ||--o{ TODO : contains
+
+    TODO ||--o{ TODO_TAG : has
+    TAG  ||--o{ TODO_TAG : assigned_to
+
+    TODO ||--o{ TODO_DEPENDENCY : depends_on
+    TODO ||--o{ TODO_DEPENDENCY : blocks
+```
 
 ### Authentication & Access Control
 - **Username**: Required for all todo and project operations (create, list, get, update, delete, search)
