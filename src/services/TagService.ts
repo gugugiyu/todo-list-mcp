@@ -122,7 +122,7 @@ class TagService {
   async getTagByName(name: string): Promise<Tag | undefined> {
     const tagRepo = this.dbService.getTagRepository();
     const tag = await tagRepo.findOne({
-      where: { name: name }
+      where: { name: name },
     });
 
     if (!tag) return undefined;
@@ -142,7 +142,7 @@ class TagService {
     const tagRepo = this.dbService.getTagRepository();
 
     const findOptions: any = {
-      order: { name: 'ASC' }
+      order: { name: 'ASC' },
     };
 
     // Add pagination if specified
@@ -156,7 +156,7 @@ class TagService {
     const tags = await tagRepo.find(findOptions);
 
     // Convert each database row to a Tag object
-    return tags.map(tag => this.entityToTag(tag));
+    return tags.map((tag) => this.entityToTag(tag));
   }
 
   /**
@@ -175,20 +175,22 @@ class TagService {
     const tagRepo = this.dbService.getTagRepository();
 
     // Resolve all human-readable IDs to UUIDs
-    const resolvedIds = ids.map(id => {
-      if (id.startsWith('tag-')) {
-        const resolvedUuid = this.idMap.getUuid(id, EntityType.TAG);
-        return resolvedUuid;
-      }
-      return id;
-    }).filter((uuid): uuid is string => uuid !== undefined);
+    const resolvedIds = ids
+      .map((id) => {
+        if (id.startsWith('tag-')) {
+          const resolvedUuid = this.idMap.getUuid(id, EntityType.TAG);
+          return resolvedUuid;
+        }
+        return id;
+      })
+      .filter((uuid): uuid is string => uuid !== undefined);
 
     if (resolvedIds.length === 0) {
       return [];
     }
 
     const tags = await tagRepo.find({
-      where: { id: In([...resolvedIds]) }
+      where: { id: In([...resolvedIds]) },
     });
 
     // Convert each database row to a Tag object and preserve input order
@@ -198,7 +200,7 @@ class TagService {
       const entityTag = this.entityToTag(tag);
       tagMap.set(tag.id, entityTag);
     });
-    
+
     // Map input IDs to UUIDs for lookup
     const orderedTags: Tag[] = [];
     for (const id of ids) {
@@ -313,10 +315,10 @@ class TagService {
 
     const tags = await tagRepo.find({
       where: { name: Like(searchTerm) },
-      order: { name: 'ASC' }
+      order: { name: 'ASC' },
     });
 
-    return tags.map(tag => this.entityToTag(tag));
+    return tags.map((tag) => this.entityToTag(tag));
   }
 
   /**
@@ -332,7 +334,6 @@ class TagService {
    */
   async addTagToTodo(todoId: string, tagId: string): Promise<boolean> {
     const todoRepo = this.dbService.getTodoRepository();
-    const tagRepo = this.dbService.getTagRepository();
 
     // Resolve human-readable IDs to UUIDs if needed
     let tagUuid = tagId;
@@ -352,13 +353,13 @@ class TagService {
     // Check current tag count before adding (max 4 tags per todo)
     const currentTags = await this.getTagsForTodo(todoId);
     if (currentTags.length >= 4) {
-      throw new Error("Maximum of 4 tags allowed per todo");
+      throw new Error('Maximum of 4 tags allowed per todo');
     }
 
     try {
       const todo = await todoRepo.findOne({
         where: { id: todoUuid },
-        relations: ['tags']
+        relations: ['tags'],
       });
 
       if (!todo) {
@@ -412,7 +413,7 @@ class TagService {
 
     const todo = await todoRepo.findOne({
       where: { id: todoUuid },
-      relations: ['tags']
+      relations: ['tags'],
     });
 
     if (!todo) return false;
@@ -442,7 +443,7 @@ class TagService {
 
     const todo = await todoRepo.findOne({
       where: { id: todoUuid },
-      relations: ['tags']
+      relations: ['tags'],
     });
 
     if (!todo) return [];
@@ -473,7 +474,7 @@ class TagService {
 
     const tag = await tagRepo.findOne({
       where: { id: uuid },
-      relations: ['todos']
+      relations: ['todos'],
     });
 
     if (!tag) return [];
@@ -497,7 +498,7 @@ class TagService {
 
     const todo = await todoRepo.findOne({
       where: { id: todoUuid },
-      relations: ['tags']
+      relations: ['tags'],
     });
 
     if (!todo) return 0;
@@ -525,7 +526,7 @@ class TagService {
 
     const tags = await this.getTags(ids);
     // Preserve input order
-    return tags.map(tag => tag.name);
+    return tags.map((tag) => tag.name);
   }
 
   /**
@@ -543,7 +544,7 @@ class TagService {
       name: entity.name,
       color: entity.color,
       createdAt: entity.createdAt,
-      updatedAt: entity.updatedAt
+      updatedAt: entity.updatedAt,
     };
   }
 }

@@ -9,12 +9,7 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html'],
-      exclude: [
-        'node_modules/',
-        'tests/',
-        'dist/',
-        'scripts/',
-      ],
+      exclude: ['node_modules/', 'tests/', 'dist/', 'scripts/'],
     },
     testTimeout: 10000,
   },

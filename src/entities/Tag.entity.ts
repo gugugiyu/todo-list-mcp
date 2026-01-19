@@ -25,11 +25,11 @@ export class Tag {
   updatedAt!: string;
 
   // Relationships
-  @ManyToMany(() => Todo, todo => todo.tags)
+  @ManyToMany(() => Todo, (todo) => todo.tags)
   @JoinTable({
     name: 'todo_tags',
     joinColumn: { name: 'tag_id', referencedColumnName: 'id' },
-    inverseJoinColumn: { name: 'todo_id', referencedColumnName: 'id' }
+    inverseJoinColumn: { name: 'todo_id', referencedColumnName: 'id' },
   })
   todos!: Todo[];
 }

@@ -9,7 +9,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { TagService } from '../../src/services/TagService.js';
 import { IdMapService, EntityType } from '../../src/services/IdMapService.js';
 import { DatabaseService } from '../../src/services/DatabaseService.js';
-import { TestDatabaseService, seedUser, seedTag, seedTodo, seedTagTodoRelation, generateTestUuid } from '../utils/testDatabase.js';
+import { TestDatabaseService, seedTodo, generateTestUuid } from '../utils/testDatabase.js';
 import { UserService } from '../../src/services/UserService.js';
 
 describe('TagService', () => {
@@ -122,7 +122,7 @@ describe('TagService', () => {
     });
 
     it('should return tag by UUID', async () => {
-      const createdTag = await tagService.createTag({ name: 'UUID Test' });
+      await tagService.createTag({ name: 'UUID Test' });
       const dataSource = testDb.getDataSource();
       const row = await dataSource.query('SELECT id FROM tags WHERE name = ?', ['UUID Test']);
       const uuid = row[0].id;
@@ -172,20 +172,20 @@ describe('TagService', () => {
     beforeEach(async () => {
       await testDb.clearAll();
     });
- 
+
     it('should return empty array when no tags exist', async () => {
       const tags = await tagService.getAllTags();
- 
+
       expect(tags).toEqual([]);
     });
- 
+
     it('should return all tags ordered by name', async () => {
       await tagService.createTag({ name: 'Zebra' });
       await tagService.createTag({ name: 'Apple' });
       await tagService.createTag({ name: 'Banana' });
- 
+
       const tags = await tagService.getAllTags();
- 
+
       expect(tags).toHaveLength(3);
       expect(tags[0].name).toBe('Apple');
       expect(tags[1].name).toBe('Banana');
@@ -198,9 +198,9 @@ describe('TagService', () => {
       await tagService.createTag({ name: 'Tag 3' });
       await tagService.createTag({ name: 'Tag 4' });
       await tagService.createTag({ name: 'Tag 5' });
- 
+
       const tags = await tagService.getAllTags(2);
- 
+
       expect(tags).toHaveLength(2);
       expect(tags[0].name).toBe('Tag 1');
       expect(tags[1].name).toBe('Tag 2');
@@ -212,9 +212,9 @@ describe('TagService', () => {
       await tagService.createTag({ name: 'Tag 3' });
       await tagService.createTag({ name: 'Tag 4' });
       await tagService.createTag({ name: 'Tag 5' });
- 
+
       const tags = await tagService.getAllTags(undefined, 2);
- 
+
       expect(tags).toHaveLength(3);
       expect(tags[0].name).toBe('Tag 3');
       expect(tags[1].name).toBe('Tag 4');
@@ -227,9 +227,9 @@ describe('TagService', () => {
       await tagService.createTag({ name: 'Tag 3' });
       await tagService.createTag({ name: 'Tag 4' });
       await tagService.createTag({ name: 'Tag 5' });
- 
+
       const tags = await tagService.getAllTags(2, 1);
- 
+
       expect(tags).toHaveLength(2);
       expect(tags[0].name).toBe('Tag 2');
       expect(tags[1].name).toBe('Tag 3');
@@ -306,7 +306,7 @@ describe('TagService', () => {
     });
 
     it('should throw error for duplicate name', async () => {
-      const tag1 = await tagService.createTag({ name: 'Tag 1' });
+      await tagService.createTag({ name: 'Tag 1' });
       const tag2 = await tagService.createTag({ name: 'Tag 2' });
 
       await expect(() => {

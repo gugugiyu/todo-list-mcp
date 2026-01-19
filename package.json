@@ -8,9 +8,14 @@
     "start": "node dist/index.js",
     "dev": "npm run build && npm start",
     "test": "npm run build && node dist/client.js",
-    "test:unit": "vitest",
-    "test:unit:coverage": "vitest --coverage",
-    "inspector": "npx @modelcontextprotocol/inspector node dist/index.js"
+    "test:unit": "npx vitest",
+    "test:unit:coverage": "npx vitest --coverage",
+    "inspector": "npx @modelcontextprotocol/inspector node dist/index.js",
+    "format": "prettier --check .",
+    "format:write": "prettier --write .",
+    "lint": "eslint . --ext .ts,.tsx",
+    "lint:fix": "eslint . --ext .ts,.tsx --fix",
+    "prepare": "husky install"
   },
   "keywords": [
     "mcp",
@@ -31,11 +36,20 @@
     "zod": "^3.22.4"
   },
   "devDependencies": {
+    "@commitlint/cli": "^20.3.1",
+    "@commitlint/config-conventional": "^20.3.1",
     "@modelcontextprotocol/inspector": "^0.5.1",
     "@types/better-sqlite3": "^7.6.9",
     "@types/node": "^20.11.28",
     "@types/uuid": "^9.0.8",
+    "@typescript-eslint/eslint-plugin": "^8.53.0",
+    "@typescript-eslint/parser": "^8.53.0",
     "@vitest/coverage-v8": "^4.0.17",
+    "eslint": "^8.57.1",
+    "eslint-config-prettier": "^10.1.8",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.2.7",
+    "prettier": "^3.8.0",
     "tsx": "^4.21.0",
     "vitest": "^4.0.17"
   }

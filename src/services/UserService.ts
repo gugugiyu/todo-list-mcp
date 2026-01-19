@@ -10,7 +10,6 @@
  * - Username uniqueness is enforced at the database level
  */
 import { User, createUser, UsernameRequestSchema } from '../models/User.js';
-import { z } from 'zod';
 import { DatabaseService, databaseService } from './DatabaseService.js';
 
 /**
@@ -48,7 +47,7 @@ class UserService {
 
     // Check if user already exists
     const existingUser = await userRepo.findOne({
-      where: { username: validatedUsername }
+      where: { username: validatedUsername },
     });
 
     if (existingUser) {
@@ -88,7 +87,7 @@ class UserService {
 
     const userRepo = this.dbService.getUserRepository();
     const user = await userRepo.findOne({
-      where: { username: validatedUsername }
+      where: { username: validatedUsername },
     });
 
     if (!user) return undefined;
@@ -107,10 +106,10 @@ class UserService {
   async getAllUsers(): Promise<User[]> {
     const userRepo = this.dbService.getUserRepository();
     const users = await userRepo.find({
-      order: { createdAt: 'ASC' }
+      order: { createdAt: 'ASC' },
     });
 
-    return users.map(user => ({
+    return users.map((user) => ({
       username: user.username,
       createdAt: user.createdAt,
     }));
@@ -132,7 +131,7 @@ class UserService {
 
     const userRepo = this.dbService.getUserRepository();
     const count = await userRepo.count({
-      where: { username: validatedUsername }
+      where: { username: validatedUsername },
     });
 
     return count > 0;
@@ -159,7 +158,7 @@ class UserService {
 
     // Delete the user (cascades to todos and projects)
     const result = await userRepo.delete({
-      username: validatedUsername
+      username: validatedUsername,
     });
 
     return result.affected ? result.affected > 0 : false;

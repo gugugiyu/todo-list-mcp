@@ -72,10 +72,13 @@ Every MCP tool follows the same pattern:
 
 ```typescript
 server.tool(
-  "tool-name",            // Name: How the tool is identified
-  "Tool description",     // Description: What the tool does
-  { /* parameter schema */ },  // Schema: Expected inputs with validation
-  async (params) => {     // Handler: The implementation function
+  'tool-name', // Name: How the tool is identified
+  'Tool description', // Description: What the tool does
+  {
+    /* parameter schema */
+  }, // Schema: Expected inputs with validation
+  async (params) => {
+    // Handler: The implementation function
     // 1. Validate inputs
     // 2. Execute business logic
     // 3. Format and return response
@@ -90,7 +93,7 @@ The error handling pattern ensures consistent behavior:
 ```typescript
 const result = await safeExecute(() => {
   // Operation that might fail
-}, "Descriptive error message");
+}, 'Descriptive error message');
 
 if (result instanceof Error) {
   return createErrorResponse(result.message);
@@ -176,4 +179,4 @@ To use this server with Claude for Desktop, add it to your `claude_desktop_confi
 
 This Todo List MCP Server demonstrates a clean, well-structured approach to building an MCP server. By studying the code and comments, you can gain a deep understanding of how MCP works and how to implement your own MCP servers for various use cases.
 
-The project emphasizes not just what code to write, but why specific approaches are taken, making it an excellent learning resource for understanding both MCP and general best practices in TypeScript application development. 
+The project emphasizes not just what code to write, but why specific approaches are taken, making it an excellent learning resource for understanding both MCP and general best practices in TypeScript application development.

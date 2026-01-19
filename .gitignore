@@ -3,3 +3,7 @@ dist/
 contexts/
 data/
 .specstory/
+.husky/_/
+coverage/
+*.log
+.DS_Store

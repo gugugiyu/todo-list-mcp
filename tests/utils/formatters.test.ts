@@ -379,8 +379,6 @@ describe('formatters', () => {
   });
 
   describe('formatRelativeTime', () => {
-    const originalDateNow = Date.now;
-
     beforeEach(() => {
       // Mock Date.now to return a fixed time
       const fixedTime = new Date('2024-01-01T12:00:00.000Z').getTime();

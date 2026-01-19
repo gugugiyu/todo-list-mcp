@@ -11,7 +11,12 @@
  * - Makes it easier to change the database implementation later
  * - Encapsulates complex operations into simple method calls
  */
-import { Project, createProject, CreateProjectSchema, UpdateProjectSchema } from '../models/Project.js';
+import {
+  Project,
+  createProject,
+  CreateProjectSchema,
+  UpdateProjectSchema,
+} from '../models/Project.js';
 import { z } from 'zod';
 import { DatabaseService, databaseService } from './DatabaseService.js';
 import { IdMapService, EntityType, idMapService } from './IdMapService.js';
@@ -142,12 +147,12 @@ class ProjectService {
   async getAllProjects(username: string, limit?: number, offset?: number): Promise<Project[]> {
     // Get or create the user (automatic registration)
     const user = await this.userSvc.getOrCreateUser(username);
- 
+
     const projectRepo = this.dbService.getProjectRepository();
- 
+
     const findOptions: any = {
       where: { username: user.username },
-      order: { name: 'ASC' }
+      order: { name: 'ASC' },
     };
 
     // Add pagination if specified
@@ -161,7 +166,7 @@ class ProjectService {
     const projects = await projectRepo.find(findOptions);
 
     // Convert each database row to a Project object
-    return projects.map(project => this.entityToProject(project));
+    return projects.map((project) => this.entityToProject(project));
   }
 
   /**
@@ -176,7 +181,10 @@ class ProjectService {
    * @param username The username to verify ownership
    * @returns The updated Project if found, undefined otherwise
    */
-  async updateProject(data: z.infer<typeof UpdateProjectSchema>, username: string): Promise<Project | undefined> {
+  async updateProject(
+    data: z.infer<typeof UpdateProjectSchema>,
+    username: string
+  ): Promise<Project | undefined> {
     // Validate input data
     const validatedData = UpdateProjectSchema.parse(data);
 
@@ -224,10 +232,7 @@ class ProjectService {
 
     // First, unassign all todos from this project
     const todoRepo = this.dbService.getTodoRepository();
-    await todoRepo.update(
-      { projectId: projectUuid },
-      { projectId: null }
-    );
+    await todoRepo.update({ projectId: projectUuid }, { projectId: null });
 
     // Then delete the project
     const result = await projectRepo.delete({ id: projectUuid });
@@ -264,10 +269,10 @@ class ProjectService {
         username: user.username,
         name: Like(searchTerm),
       },
-      order: { name: 'ASC' }
+      order: { name: 'ASC' },
     });
 
-    return projects.map(project => this.entityToProject(project));
+    return projects.map((project) => this.entityToProject(project));
   }
 
   /**
@@ -290,11 +295,11 @@ class ProjectService {
 
     const todos = await todoRepo.find({
       where: { projectId: projectUuid },
-      order: { createdAt: 'ASC' }
+      order: { createdAt: 'ASC' },
     });
 
     // Convert UUIDs back to task-* format
-    return todos.map(todo => {
+    return todos.map((todo) => {
       return this.idMap.getHumanReadableId(todo.id, EntityType.TODO);
     });
   }
@@ -315,7 +320,7 @@ class ProjectService {
       name: entity.name,
       description: entity.description,
       createdAt: entity.createdAt,
-      updatedAt: entity.updatedAt
+      updatedAt: entity.updatedAt,
     };
   }
 }

@@ -1,10 +1,10 @@
 /**
  * IdMapService.ts
- * 
+ *
  * This service provides a stateless mapping between human-readable IDs and UUIDs.
  * It maintains separate maps for different entity types (todos, tags, etc) while
  * sharing the same underlying logic.
- * 
+ *
  * WHY ABSTRACT THIS LOGIC?
  * - Avoids duplication across multiple services
  * - Provides a consistent interface for ID mapping across the application
@@ -14,28 +14,28 @@
 
 /**
  * EntityType enum
- * 
+ *
  * Defines the types of entities that use human-readable ID mappings.
  */
 export enum EntityType {
-  TODO = "TASK",
-  TAG = "TAG",
-  PROJECT = "PROJECT",
+  TODO = 'TASK',
+  TAG = 'TAG',
+  PROJECT = 'PROJECT',
 }
 
 /**
  * IdMapService Class
- * 
+ *
  * Manages bidirectional mapping between UUIDs and human-readable IDs.
  * Uses separate internal maps for each entity type.
  */
 class IdMapService {
   // Maps for different entity types
-  private todoMap: Map<string, string>;   // Maps task-* to UUID
-  private tagMap: Map<string, string>;    // Maps tag-* to UUID
+  private todoMap: Map<string, string>; // Maps task-* to UUID
+  private tagMap: Map<string, string>; // Maps tag-* to UUID
   private projectMap: Map<string, string>; // Maps project-* to UUID
   private todoUuidMap: Map<string, string>; // Maps UUID to task-*
-  private tagUuidMap: Map<string, string>;  // Maps UUID to tag-*
+  private tagUuidMap: Map<string, string>; // Maps UUID to tag-*
   private projectUuidMap: Map<string, string>; // Maps UUID to project-*
 
   // Counters to track next ID for each entity type (separate from map size)
@@ -54,10 +54,10 @@ class IdMapService {
 
   /**
    * Get the human-readable ID for a UUID
-   * 
+   *
    * This creates a mapping if it doesn't exist yet.
    * Format: type-N where N is the map size
-   * 
+   *
    * @param uuid The UUID to map
    * @param entityType The type of entity
    * @returns The human-readable ID (e.g., task-1, tag-5)
@@ -72,7 +72,7 @@ class IdMapService {
     } else {
       uuidMap = this.projectUuidMap;
     }
-    
+
     const existingId = uuidMap.get(uuid);
     if (existingId) {
       return existingId;
@@ -83,15 +83,15 @@ class IdMapService {
     let prefix: string;
     if (entityType === EntityType.TODO) {
       idMap = this.todoMap;
-      prefix = "task";
+      prefix = 'task';
     } else if (entityType === EntityType.TAG) {
       idMap = this.tagMap;
-      prefix = "tag";
+      prefix = 'tag';
     } else {
       idMap = this.projectMap;
-      prefix = "project";
+      prefix = 'project';
     }
-    
+
     // Use counter instead of map size to avoid ID reuse after deletion
     let counter: number;
     if (entityType === EntityType.TODO) {
@@ -102,17 +102,17 @@ class IdMapService {
       counter = ++this.projectCounter;
     }
     const newId = `${prefix}-${counter}`;
-    
+
     // Store bidirectional mapping
     idMap.set(newId, uuid);
     uuidMap.set(uuid, newId);
-    
+
     return newId;
   }
 
   /**
    * Get the UUID for a human-readable ID
-   * 
+   *
    * @param humanReadableId The human-readable ID (e.g., task-1, tag-5)
    * @param entityType The type of entity
    * @returns The UUID, or undefined if not found
@@ -131,9 +131,9 @@ class IdMapService {
 
   /**
    * Register a new mapping
-   * 
+   *
    * Used when loading existing entities from the database to rebuild the maps.
-   * 
+   *
    * @param humanReadableId The human-readable ID
    * @param uuid The UUID
    * @param entityType The type of entity
@@ -151,7 +151,7 @@ class IdMapService {
       idMap = this.projectMap;
       uuidMap = this.projectUuidMap;
     }
-    
+
     idMap.set(humanReadableId, uuid);
     uuidMap.set(uuid, humanReadableId);
 
@@ -168,9 +168,9 @@ class IdMapService {
 
   /**
    * Unregister a mapping
-   * 
+   *
    * Used when deleting entities to clean up the maps.
-   * 
+   *
    * @param humanReadableId The human-readable ID
    * @param uuid The UUID
    * @param entityType The type of entity
@@ -188,16 +188,16 @@ class IdMapService {
       idMap = this.projectMap;
       uuidMap = this.projectUuidMap;
     }
-    
+
     idMap.delete(humanReadableId);
     uuidMap.delete(uuid);
   }
 
   /**
    * Get the next expected ID for an entity type
-   * 
+   *
    * Useful for displaying what the next ID will be.
-   * 
+   *
    * @param entityType The type of entity
    * @returns The next ID that would be assigned
    */
@@ -206,22 +206,22 @@ class IdMapService {
     let prefix: string;
     if (entityType === EntityType.TODO) {
       idMap = this.todoMap;
-      prefix = "task";
+      prefix = 'task';
     } else if (entityType === EntityType.TAG) {
       idMap = this.tagMap;
-      prefix = "tag";
+      prefix = 'tag';
     } else {
       idMap = this.projectMap;
-      prefix = "project";
+      prefix = 'project';
     }
     return `${prefix}-${idMap.size + 1}`;
   }
 
   /**
    * Get all mappings for an entity type
-   * 
+   *
    * Useful for debugging or introspection.
-   * 
+   *
    * @param entityType The type of entity
    * @returns Array of [humanReadableId, uuid] tuples
    */
