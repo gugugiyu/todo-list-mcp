@@ -4,7 +4,15 @@
  * TypeORM Entity for Tag table.
  * This entity maps to the tags table in the database.
  */
-import { Entity, PrimaryColumn, Column, ManyToMany, JoinTable } from 'typeorm';
+import {
+  Entity,
+  PrimaryColumn,
+  Column,
+  ManyToMany,
+  JoinTable,
+  Relation,
+  UpdateDateColumn,
+} from 'typeorm';
 import { Todo } from './Todo.entity.js';
 
 @Entity('tags')
@@ -18,10 +26,16 @@ export class Tag {
   @Column({ type: 'text', nullable: true })
   color!: string | null;
 
-  @Column({ type: 'text' })
+  @UpdateDateColumn({
+    type: 'datetime',
+    default: () => 'CURRENT_TIMESTAMP',
+  })
   createdAt!: string;
 
-  @Column({ type: 'text' })
+  @UpdateDateColumn({
+    type: 'datetime',
+    default: () => 'CURRENT_TIMESTAMP',
+  })
   updatedAt!: string;
 
   // Relationships
@@ -31,5 +45,5 @@ export class Tag {
     joinColumn: { name: 'tag_id', referencedColumnName: 'id' },
     inverseJoinColumn: { name: 'todo_id', referencedColumnName: 'id' },
   })
-  todos!: Todo[];
+  todos!: Relation<Todo[]>;
 }

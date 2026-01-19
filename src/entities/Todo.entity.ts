@@ -12,10 +12,13 @@ import {
   JoinColumn,
   ManyToMany,
   JoinTable,
+  Relation,
+  UpdateDateColumn,
 } from 'typeorm';
 import { User } from './User.entity.js';
 import { Project } from './Project.entity.js';
 import { Tag } from './Tag.entity.js';
+import { nullable } from 'zod';
 
 @Entity('todos')
 export class Todo {
@@ -34,29 +37,39 @@ export class Todo {
   @Column({ type: 'text' })
   description!: string;
 
-  @Column({ type: 'text', nullable: true })
+  @UpdateDateColumn({
+    type: 'datetime',
+    nullable: true,
+    default: () => 'CURRENT_TIMESTAMP',
+  })
   completedAt!: string | null;
 
   @Column({ type: 'text', nullable: true })
   projectId!: string | null;
 
-  @Column({ type: 'text' })
+  @UpdateDateColumn({
+    type: 'datetime',
+    default: () => 'CURRENT_TIMESTAMP',
+  })
   createdAt!: string;
 
-  @Column({ type: 'text' })
+  @UpdateDateColumn({
+    type: 'datetime',
+    default: () => 'CURRENT_TIMESTAMP',
+  })
   updatedAt!: string;
 
   // Relationships
   @ManyToOne(() => User, (user) => user.todos, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'username' })
-  user!: User;
+  user!: Relation<User>;
 
   @ManyToOne(() => Project, (project) => project.todos, { nullable: true })
   @JoinColumn({ name: 'projectId' })
-  project!: Project | null;
+  project!: Relation<Project | null>;
 
   @ManyToMany(() => Tag, (tag) => tag.todos, { cascade: true })
-  tags!: Tag[];
+  tags!: Relation<Tag[]>;
 
   @ManyToMany(() => Todo, (todo) => todo.blockedBy, { cascade: true })
   @JoinTable({
@@ -64,8 +77,8 @@ export class Todo {
     joinColumn: { name: 'blocked_todo_id', referencedColumnName: 'id' },
     inverseJoinColumn: { name: 'blocker_todo_id', referencedColumnName: 'id' },
   })
-  blockers!: Todo[];
+  blockers!: Relation<Todo[]>;
 
   @ManyToMany(() => Todo, (todo) => todo.blockers)
-  blockedBy!: Todo[];
+  blockedBy!: Relation<Todo[]>;
 }

@@ -4,7 +4,7 @@
  * TypeORM Entity for the User table.
  * This entity maps to the users table in the database.
  */
-import { Entity, PrimaryColumn, Column, OneToMany } from 'typeorm';
+import { Entity, PrimaryColumn, Column, OneToMany, Relation, UpdateDateColumn } from 'typeorm';
 import { Project } from './Project.entity.js';
 import { Todo } from './Todo.entity.js';
 
@@ -13,13 +13,16 @@ export class User {
   @PrimaryColumn({ type: 'text' })
   username!: string;
 
-  @Column({ type: 'text' })
+  @UpdateDateColumn({
+    type: 'datetime',
+    default: () => 'CURRENT_TIMESTAMP',
+  })
   createdAt!: string;
 
   // Relationships
   @OneToMany(() => Project, (project) => project.user)
-  projects!: Project[];
+  projects!: Relation<Project[]>;
 
   @OneToMany(() => Todo, (todo) => todo.user)
-  todos!: Todo[];
+  todos!: Relation<Todo[]>;
 }

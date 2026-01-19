@@ -31,6 +31,8 @@ export async function initializeDataSource(): Promise<void> {
   // Ensure the database folder exists
   ensureDbFolder();
 
+  console.error('Database location exists!');
+
   // Initialize the DataSource
   await AppDataSource.initialize();
 
@@ -38,7 +40,7 @@ export async function initializeDataSource(): Promise<void> {
   await AppDataSource.query('PRAGMA journal_mode = WAL');
   await AppDataSource.query('PRAGMA foreign_keys = ON');
 
-  console.log('Data Source has been initialized!');
+  console.error('Data Source has been initialized!');
 }
 
 /**
@@ -47,5 +49,5 @@ export async function initializeDataSource(): Promise<void> {
  */
 export async function closeDataSource(): Promise<void> {
   await AppDataSource.destroy();
-  console.log('Data Source has been closed!');
+  console.error('Data Source has been closed!');
 }
