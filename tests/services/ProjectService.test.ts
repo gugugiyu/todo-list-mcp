@@ -9,6 +9,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { ProjectService } from '../../src/services/ProjectService.js';
 import { UserService } from '../../src/services/UserService.js';
 import { IdMapService, EntityType } from '../../src/services/IdMapService.js';
+import { DatabaseService } from '../../src/services/DatabaseService.js';
 import { TestDatabaseService, seedUser, seedProject, generateTestUuid } from '../utils/testDatabase.js';
 
 describe('ProjectService', () => {
@@ -17,26 +18,29 @@ describe('ProjectService', () => {
   let userService: UserService;
   let projectService: ProjectService;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     // Create fresh instances for each test
     testDb = new TestDatabaseService();
+    await testDb.initialize();
     idMapService = new IdMapService();
-    userService = new UserService(testDb.getDb());
-    projectService = new ProjectService(testDb.getDb(), idMapService, userService);
+    // Create a DatabaseService instance with test DataSource
+    const testDbService = new DatabaseService(testDb.getDataSource());
+    userService = new UserService(testDbService);
+    projectService = new ProjectService(idMapService, userService, testDbService);
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     // Clean up
-    testDb.close();
+    await testDb.close();
   });
 
   describe('createProject', () => {
-    beforeEach(() => {
-      testDb.clearAll();
+    beforeEach(async () => {
+      await testDb.clearAll();
     });
 
-    it('should create a new project', () => {
-      const project = projectService.createProject({
+    it('should create a new project', async () => {
+      const project = await projectService.createProject({
         username: 'john-doe',
         name: 'Home Renovation',
         description: 'Renovate the kitchen',
@@ -50,21 +54,21 @@ describe('ProjectService', () => {
       expect(project.updatedAt).toBeDefined();
     });
 
-    it('should create user if they do not exist', () => {
-      const project = projectService.createProject({
+    it('should create user if they do not exist', async () => {
+      const project = await projectService.createProject({
         username: 'new-user',
         name: 'Test Project',
         description: 'Test Description',
       });
 
-      const user = userService.getUser('new-user');
+      const user = await userService.getUser('new-user');
       expect(user).toBeDefined();
     });
 
-    it('should use existing user if they exist', () => {
-      userService.getOrCreateUser('exist-user');
+    it('should use existing user if they exist', async () => {
+      await userService.getOrCreateUser('exist-user');
 
-      const project = projectService.createProject({
+      const project = await projectService.createProject({
         username: 'exist-user',
         name: 'Test Project',
         description: 'Test Description',
@@ -73,122 +77,122 @@ describe('ProjectService', () => {
       expect(project.username).toBe('exist-user');
     });
 
-    it('should validate name length', () => {
-      expect(() => {
-        projectService.createProject({
+    it('should validate name length', async () => {
+      await expect(() => {
+        return projectService.createProject({
           username: 'test-user',
           name: '',
           description: 'Description',
         });
-      }).toThrow();
+      }).rejects.toThrow();
 
-      expect(() => {
-        projectService.createProject({
+      await expect(() => {
+        return projectService.createProject({
           username: 'test-user',
           name: 'a'.repeat(101),
           description: 'Description',
         });
-      }).toThrow();
+      }).rejects.toThrow();
     });
 
-    it('should validate description length', () => {
-      expect(() => {
-        projectService.createProject({
+    it('should validate description length', async () => {
+      await expect(() => {
+        return projectService.createProject({
           username: 'test-user',
           name: 'Name',
           description: '',
         });
-      }).toThrow();
+      }).rejects.toThrow();
 
-      expect(() => {
-        projectService.createProject({
+      await expect(() => {
+        return projectService.createProject({
           username: 'test-user',
           name: 'Name',
           description: 'a'.repeat(1001),
         });
-      }).toThrow();
+      }).rejects.toThrow();
     });
   });
 
   describe('getProject', () => {
-    beforeEach(() => {
-      testDb.clearAll();
+    beforeEach(async () => {
+      await testDb.clearAll();
     });
 
-    it('should return undefined for non-existent project', () => {
-      const project = projectService.getProject('project-999', 'test-user');
+    it('should return undefined for non-existent project', async () => {
+      const project = await projectService.getProject('project-999', 'test-user');
 
       expect(project).toBeUndefined();
     });
 
-    it('should return project by ID', () => {
-      const createdProject = projectService.createProject({
+    it('should return project by ID', async () => {
+      const createdProject = await projectService.createProject({
         username: 'test-user',
         name: 'Test Project',
         description: 'Test Description',
       });
 
-      const project = projectService.getProject(createdProject.id, 'test-user');
+      const project = await projectService.getProject(createdProject.id, 'test-user');
 
       expect(project).toBeDefined();
       expect(project?.id).toBe('project-1');
       expect(project?.name).toBe('Test Project');
     });
 
-    it('should return undefined for project owned by different user', () => {
-      const project = projectService.createProject({
+    it('should return undefined for project owned by different user', async () => {
+      const project = await projectService.createProject({
         username: 'user1',
         name: 'User1 Project',
         description: 'Description',
       });
 
-      const retrieved = projectService.getProject(project.id, 'user2');
+      const retrieved = await projectService.getProject(project.id, 'user2');
 
       expect(retrieved).toBeUndefined();
     });
 
-    it('should return project without username check when username not provided', () => {
-      const project = projectService.createProject({
+    it('should return project without username check when username not provided', async () => {
+      const project = await projectService.createProject({
         username: 'test-user',
         name: 'Test Project',
         description: 'Test Description',
       });
 
-      const retrieved = projectService.getProject(project.id, 'test-user');
+      const retrieved = await projectService.getProject(project.id, 'test-user');
 
       expect(retrieved).toBeDefined();
     });
   });
 
   describe('getAllProjects', () => {
-    beforeEach(() => {
-      testDb.clearAll();
+    beforeEach(async () => {
+      await testDb.clearAll();
     });
  
-    it('should return empty array when no projects exist', () => {
-      const projects = projectService.getAllProjects('test-user');
+    it('should return empty array when no projects exist', async () => {
+      const projects = await projectService.getAllProjects('test-user');
  
       expect(projects).toEqual([]);
     });
  
-    it('should return all projects for user ordered by name', () => {
-      projectService.createProject({
+    it('should return all projects for user ordered by name', async () => {
+      await projectService.createProject({
         username: 'test-user',
         name: 'Zebra Project',
         description: 'Description',
       });
-      projectService.createProject({
+      await projectService.createProject({
         username: 'test-user',
         name: 'Apple Project',
         description: 'Description',
       });
-      projectService.createProject({
+      await projectService.createProject({
         username: 'test-user',
         name: 'Banana Project',
         description: 'Description',
       });
  
-      const projects = projectService.getAllProjects('test-user');
+      const projects = await projectService.getAllProjects('test-user');
  
       expect(projects).toHaveLength(3);
       expect(projects[0].name).toBe('Apple Project');
@@ -196,20 +200,20 @@ describe('ProjectService', () => {
       expect(projects[2].name).toBe('Zebra Project');
     });
 
-    it('should only return projects for specified user', () => {
-      projectService.createProject({
+    it('should only return projects for specified user', async () => {
+      await projectService.createProject({
         username: 'user1',
         name: 'Project 1',
         description: 'Description',
       });
-      projectService.createProject({
+      await projectService.createProject({
         username: 'user2',
         name: 'Project 2',
         description: 'Description',
       });
  
-      const user1Projects = projectService.getAllProjects('user1');
-      const user2Projects = projectService.getAllProjects('user2');
+      const user1Projects = await projectService.getAllProjects('user1');
+      const user2Projects = await projectService.getAllProjects('user2');
  
       expect(user1Projects).toHaveLength(1);
       expect(user2Projects).toHaveLength(1);
@@ -217,68 +221,68 @@ describe('ProjectService', () => {
       expect(user2Projects[0].name).toBe('Project 2');
     });
 
-    it('should respect limit parameter', () => {
-      projectService.createProject({
+    it('should respect limit parameter', async () => {
+      await projectService.createProject({
         username: 'test-user',
         name: 'Project 1',
         description: 'Description',
       });
-      projectService.createProject({
+      await projectService.createProject({
         username: 'test-user',
         name: 'Project 2',
         description: 'Description',
       });
-      projectService.createProject({
+      await projectService.createProject({
         username: 'test-user',
         name: 'Project 3',
         description: 'Description',
       });
-      projectService.createProject({
+      await projectService.createProject({
         username: 'test-user',
         name: 'Project 4',
         description: 'Description',
       });
-      projectService.createProject({
+      await projectService.createProject({
         username: 'test-user',
         name: 'Project 5',
         description: 'Description',
       });
  
-      const projects = projectService.getAllProjects('test-user', 2);
+      const projects = await projectService.getAllProjects('test-user', 2);
  
       expect(projects).toHaveLength(2);
       expect(projects[0].name).toBe('Project 1');
       expect(projects[1].name).toBe('Project 2');
     });
 
-    it('should respect offset parameter', () => {
-      projectService.createProject({
+    it('should respect offset parameter', async () => {
+      await projectService.createProject({
         username: 'test-user',
         name: 'Project 1',
         description: 'Description',
       });
-      projectService.createProject({
+      await projectService.createProject({
         username: 'test-user',
         name: 'Project 2',
         description: 'Description',
       });
-      projectService.createProject({
+      await projectService.createProject({
         username: 'test-user',
         name: 'Project 3',
         description: 'Description',
       });
-      projectService.createProject({
+      await projectService.createProject({
         username: 'test-user',
         name: 'Project 4',
         description: 'Description',
       });
-      projectService.createProject({
+      await projectService.createProject({
         username: 'test-user',
         name: 'Project 5',
         description: 'Description',
       });
  
-      const projects = projectService.getAllProjects('test-user', undefined, 2);
+      const projects = await projectService.getAllProjects('test-user', undefined, 2);
  
       expect(projects).toHaveLength(3);
       expect(projects[0].name).toBe('Project 3');
@@ -286,34 +290,34 @@ describe('ProjectService', () => {
       expect(projects[2].name).toBe('Project 5');
     });
 
-    it('should respect both limit and offset parameters', () => {
-      projectService.createProject({
+    it('should respect both limit and offset parameters', async () => {
+      await projectService.createProject({
         username: 'test-user',
         name: 'Project 1',
         description: 'Description',
       });
-      projectService.createProject({
+      await projectService.createProject({
         username: 'test-user',
         name: 'Project 2',
         description: 'Description',
       });
-      projectService.createProject({
+      await projectService.createProject({
         username: 'test-user',
         name: 'Project 3',
         description: 'Description',
       });
-      projectService.createProject({
+      await projectService.createProject({
         username: 'test-user',
         name: 'Project 4',
         description: 'Description',
       });
-      projectService.createProject({
+      await projectService.createProject({
         username: 'test-user',
         name: 'Project 5',
         description: 'Description',
       });
  
-      const projects = projectService.getAllProjects('test-user', 2, 1);
+      const projects = await projectService.getAllProjects('test-user', 2, 1);
  
       expect(projects).toHaveLength(2);
       expect(projects[0].name).toBe('Project 2');
@@ -322,12 +326,12 @@ describe('ProjectService', () => {
   });
 
   describe('updateProject', () => {
-    beforeEach(() => {
-      testDb.clearAll();
+    beforeEach(async () => {
+      await testDb.clearAll();
     });
 
-    it('should return undefined for non-existent project', () => {
-      const result = projectService.updateProject({
+    it('should return undefined for non-existent project', async () => {
+      const result = await projectService.updateProject({
         id: 'project-999',
         name: 'Updated Name',
       }, 'test-user');
@@ -335,46 +339,46 @@ describe('ProjectService', () => {
       expect(result).toBeUndefined();
     });
 
-    it('should update project name', () => {
-      const project = projectService.createProject({
+    it('should update project name', async () => {
+      const project = await projectService.createProject({
         username: 'test-user',
         name: 'Original Name',
         description: 'Description',
       });
 
-      const updated = projectService.updateProject({
+      const updated = await projectService.updateProject({
         id: project.id,
         name: 'Updated Name',
       }, 'test-user');
 
       expect(updated?.name).toBe('Updated Name');
-      expect(projectService.getProject(project.id, 'test-user')?.name).toBe('Updated Name');
+      expect((await projectService.getProject(project.id, 'test-user'))?.name).toBe('Updated Name');
     });
 
-    it('should update project description', () => {
-      const project = projectService.createProject({
+    it('should update project description', async () => {
+      const project = await projectService.createProject({
         username: 'test-user',
         name: 'Name',
         description: 'Original Description',
       });
 
-      const updated = projectService.updateProject({
+      const updated = await projectService.updateProject({
         id: project.id,
         description: 'Updated Description',
       }, 'test-user');
 
       expect(updated?.description).toBe('Updated Description');
-      expect(projectService.getProject(project.id, 'test-user')?.description).toBe('Updated Description');
+      expect((await projectService.getProject(project.id, 'test-user'))?.description).toBe('Updated Description');
     });
 
-    it('should return undefined for project owned by different user', () => {
-      const project = projectService.createProject({
+    it('should return undefined for project owned by different user', async () => {
+      const project = await projectService.createProject({
         username: 'user1',
         name: 'Project',
         description: 'Description',
       });
 
-      const result = projectService.updateProject({
+      const result = await projectService.updateProject({
         id: project.id,
         name: 'Updated',
       }, 'user2');
@@ -384,35 +388,35 @@ describe('ProjectService', () => {
   });
 
   describe('deleteProject', () => {
-    beforeEach(() => {
-      testDb.clearAll();
+    beforeEach(async () => {
+      await testDb.clearAll();
     });
 
-    it('should return false for non-existent project', () => {
-      const result = projectService.deleteProject('project-999', 'test-user');
+    it('should return false for non-existent project', async () => {
+      const result = await projectService.deleteProject('project-999', 'test-user');
 
       expect(result).toBe(false);
     });
 
-    it('should delete project and return true', () => {
-      const project = projectService.createProject({
+    it('should delete project and return true', async () => {
+      const project = await projectService.createProject({
         username: 'test-user',
         name: 'Delete Me',
         description: 'Description',
       });
 
-      const result = projectService.deleteProject(project.id, 'test-user');
+      const result = await projectService.deleteProject(project.id, 'test-user');
 
       expect(result).toBe(true);
-      expect(projectService.getProject(project.id, 'test-user')).toBeUndefined();
+      expect(await projectService.getProject(project.id, 'test-user')).toBeUndefined();
     });
 
-    it('should unassign all todos from project', () => {
-      const db = testDb.getDb();
+    it('should unassign all todos from project', async () => {
+      const dataSource = testDb.getDataSource();
       const username = 'test-user';
 
       // Create project and todos
-      const project = projectService.createProject({
+      const project = await projectService.createProject({
         username,
         name: 'Test Project',
         description: 'Description',
@@ -422,95 +426,96 @@ describe('ProjectService', () => {
       const todoId2 = generateTestUuid();
 
       // Get the project UUID for foreign key reference
-      const projectUuid = projectService.getIdMap().getUuid(project.id, EntityType.PROJECT);
+      const projectUuid = idMapService.getUuid(project.id, EntityType.PROJECT);
 
-      db.prepare(`
-        INSERT INTO todos (id, username, title, priority, description, completedAt, createdAt, updatedAt, project_id)
+      // Seed todos with project assignment
+      await dataSource.query(`
+        INSERT INTO todos (id, username, title, priority, description, completedAt, createdAt, updatedAt, projectId)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(todoId1, username, 'Todo 1', 'MEDIUM', 'Description 1', null, new Date().toISOString(), new Date().toISOString(), projectUuid);
-      db.prepare(`
-        INSERT INTO todos (id, username, title, priority, description, completedAt, createdAt, updatedAt, project_id)
+      `, [todoId1, username, 'Todo 1', 'MEDIUM', 'Description 1', null, new Date().toISOString(), new Date().toISOString(), projectUuid]);
+      await dataSource.query(`
+        INSERT INTO todos (id, username, title, priority, description, completedAt, createdAt, updatedAt, projectId)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(todoId2, username, 'Todo 2', 'HIGH', 'Description 2', null, new Date().toISOString(), new Date().toISOString(), projectUuid);
+      `, [todoId2, username, 'Todo 2', 'HIGH', 'Description 2', null, new Date().toISOString(), new Date().toISOString(), projectUuid]);
 
       // Delete project
-      projectService.deleteProject(project.id, username);
+      await projectService.deleteProject(project.id, username);
 
       // Check todos are unassigned
-      const todos = db.prepare('SELECT * FROM todos WHERE username = ?').all(username) as any[];
+      const todos = await dataSource.query('SELECT * FROM todos WHERE username = ?', [username]);
       expect(todos).toHaveLength(2);
-      expect(todos[0].project_id).toBeNull();
-      expect(todos[1].project_id).toBeNull();
+      expect(todos[0].projectId).toBeNull();
+      expect(todos[1].projectId).toBeNull();
     });
 
-    it('should return false for project owned by different user', () => {
-      const project = projectService.createProject({
+    it('should return false for project owned by different user', async () => {
+      const project = await projectService.createProject({
         username: 'user1',
         name: 'Project',
         description: 'Description',
       });
 
-      const result = projectService.deleteProject(project.id, 'user2');
+      const result = await projectService.deleteProject(project.id, 'user2');
 
       expect(result).toBe(false);
     });
   });
 
   describe('searchProjectsByName', () => {
-    beforeEach(() => {
-      testDb.clearAll();
+    beforeEach(async () => {
+      await testDb.clearAll();
     });
 
-    it('should return empty array for no matches', () => {
-      projectService.createProject({
+    it('should return empty array for no matches', async () => {
+      await projectService.createProject({
         username: 'test-user',
         name: 'Test Project',
         description: 'Description',
       });
 
-      const results = projectService.searchProjectsByName('nonexistent', 'test-user');
+      const results = await projectService.searchProjectsByName('nonexistent', 'test-user');
 
       expect(results).toEqual([]);
     });
 
-    it('should perform case-insensitive partial match', () => {
-      projectService.createProject({
+    it('should perform case-insensitive partial match', async () => {
+      await projectService.createProject({
         username: 'test-user',
         name: 'Important Project',
         description: 'Description',
       });
-      projectService.createProject({
+      await projectService.createProject({
         username: 'test-user',
         name: 'Portfolio',
         description: 'Description',
       });
-      projectService.createProject({
+      await projectService.createProject({
         username: 'test-user',
         name: 'Personal Stuff',
         description: 'Description',
       });
 
-      const results = projectService.searchProjectsByName('port', 'test-user');
+      const results = await projectService.searchProjectsByName('port', 'test-user');
 
       expect(results).toHaveLength(2);
       expect(results[0].name).toBe('Important Project');
       expect(results[1].name).toBe('Portfolio');
     });
 
-    it('should only return projects for specified user', () => {
-      projectService.createProject({
+    it('should only return projects for specified user', async () => {
+      await projectService.createProject({
         username: 'user1',
         name: 'Test Project',
         description: 'Description',
       });
-      projectService.createProject({
+      await projectService.createProject({
         username: 'user2',
         name: 'Test Project',
         description: 'Description',
       });
 
-      const user1Results = projectService.searchProjectsByName('test', 'user1');
-      const user2Results = projectService.searchProjectsByName('test', 'user2');
+      const user1Results = await projectService.searchProjectsByName('test', 'user1');
+      const user2Results = await projectService.searchProjectsByName('test', 'user2');
 
       expect(user1Results).toHaveLength(1);
       expect(user2Results).toHaveLength(1);
@@ -520,27 +525,27 @@ describe('ProjectService', () => {
   });
 
   describe('getTodosInProject', () => {
-    beforeEach(() => {
-      testDb.clearAll();
+    beforeEach(async () => {
+      await testDb.clearAll();
     });
 
-    it('should return empty array for project with no todos', () => {
-      const project = projectService.createProject({
+    it('should return empty array for project with no todos', async () => {
+      const project = await projectService.createProject({
         username: 'test-user',
         name: 'Test Project',
         description: 'Description',
       });
 
-      const todos = projectService.getTodosInProject(project.id, 'test-user');
+      const todos = await projectService.getTodosInProject(project.id, 'test-user');
 
       expect(todos).toEqual([]);
     });
 
-    it('should return all todos in project', () => {
-      const db = testDb.getDb();
+    it('should return all todos in project', async () => {
+      const dataSource = testDb.getDataSource();
       const username = 'test-user';
 
-      const project = projectService.createProject({
+      const project = await projectService.createProject({
         username,
         name: 'Test Project',
         description: 'Description',
@@ -551,27 +556,27 @@ describe('ProjectService', () => {
       const todoId3 = generateTestUuid();
 
       // Register the UUIDs with IdMapService so they can be found
-      const todoHumanId1 = projectService.getIdMap().getHumanReadableId(todoId1, EntityType.TODO);
-      const todoHumanId2 = projectService.getIdMap().getHumanReadableId(todoId2, EntityType.TODO);
-      const todoHumanId3 = projectService.getIdMap().getHumanReadableId(todoId3, EntityType.TODO);
+      const todoHumanId1 = idMapService.getHumanReadableId(todoId1, EntityType.TODO);
+      const todoHumanId2 = idMapService.getHumanReadableId(todoId2, EntityType.TODO);
+      const todoHumanId3 = idMapService.getHumanReadableId(todoId3, EntityType.TODO);
 
       // Get the project UUID for foreign key reference
-      const projectUuid = projectService.getIdMap().getUuid(project.id, EntityType.PROJECT);
+      const projectUuid = idMapService.getUuid(project.id, EntityType.PROJECT);
 
-      db.prepare(`
-        INSERT INTO todos (id, username, title, priority, description, completedAt, createdAt, updatedAt, project_id)
+      await dataSource.query(`
+        INSERT INTO todos (id, username, title, priority, description, completedAt, createdAt, updatedAt, projectId)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(todoId1, username, 'Todo 1', 'MEDIUM', 'Description 1', null, new Date().toISOString(), new Date().toISOString(), projectUuid);
-      db.prepare(`
-        INSERT INTO todos (id, username, title, priority, description, completedAt, createdAt, updatedAt, project_id)
+      `, [todoId1, username, 'Todo 1', 'MEDIUM', 'Description 1', null, new Date().toISOString(), new Date().toISOString(), projectUuid]);
+      await dataSource.query(`
+        INSERT INTO todos (id, username, title, priority, description, completedAt, createdAt, updatedAt, projectId)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(todoId2, username, 'Todo 2', 'HIGH', 'Description 2', null, new Date().toISOString(), new Date().toISOString(), projectUuid);
-      db.prepare(`
+      `, [todoId2, username, 'Todo 2', 'HIGH', 'Description 2', null, new Date().toISOString(), new Date().toISOString(), projectUuid]);
+      await dataSource.query(`
         INSERT INTO todos (id, username, title, priority, description, completedAt, createdAt, updatedAt)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(todoId3, username, 'Todo 3', 'LOW', 'Description 3', null, new Date().toISOString(), new Date().toISOString()); // Not in project
+      `, [todoId3, username, 'Todo 3', 'LOW', 'Description 3', null, new Date().toISOString(), new Date().toISOString()]); // Not in project
 
-      const todos = projectService.getTodosInProject(project.id, username);
+      const todos = await projectService.getTodosInProject(project.id, username);
 
       expect(todos).toHaveLength(2);
       expect(todos).toContain(todoHumanId1);
@@ -579,20 +584,20 @@ describe('ProjectService', () => {
       expect(todos).not.toContain(todoHumanId3);
     });
 
-    it('should return empty array for non-existent project', () => {
-      const todos = projectService.getTodosInProject('project-999', 'test-user');
+    it('should return empty array for non-existent project', async () => {
+      const todos = await projectService.getTodosInProject('project-999', 'test-user');
 
       expect(todos).toEqual([]);
     });
 
-    it('should return empty array for project owned by different user', () => {
-      const project = projectService.createProject({
+    it('should return empty array for project owned by different user', async () => {
+      const project = await projectService.createProject({
         username: 'user1',
         name: 'Test Project',
         description: 'Description',
       });
 
-      const todos = projectService.getTodosInProject(project.id, 'user2');
+      const todos = await projectService.getTodosInProject(project.id, 'user2');
 
       expect(todos).toEqual([]);
     });
